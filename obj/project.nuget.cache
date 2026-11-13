@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "qHz1E+14Ybs=",
+  "dgSpecHash": "v3II89drENU=",
   "success": true,
-  "projectFilePath": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Project\\GPR202_A3\\GPR202_A3.csproj",
+  "projectFilePath": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\GPR202_A3.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\andrew\\.nuget\\packages\\assimpnet\\4.1.0\\assimpnet.4.1.0.nupkg.sha512",
     "C:\\Users\\andrew\\.nuget\\packages\\microsoft.netcore.platforms\\1.1.0\\microsoft.netcore.platforms.1.1.0.nupkg.sha512",

@@ -37,6 +37,11 @@ namespace GPR202_Assessment3
         public int balloons_left = balloons_total;
         public List<BalloonState> m_balloons;
 
+        float totalTime = 0f;
+        int frameCount = 0;
+        float averageFPS = 0f;
+        double currentFPS = 0f;
+
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1280, 720));
@@ -99,7 +104,20 @@ namespace GPR202_Assessment3
 
         protected override void OnUpdateFrame(FrameEventArgs args)
         {
-            Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}         FPS: {1f / args.Time:0}";
+            totalTime += (float)args.Time;
+            frameCount++;
+
+            if (totalTime >= 1f)
+            {
+                averageFPS = frameCount / totalTime;
+
+                frameCount = 0;
+                totalTime = 0f;
+                currentFPS = 1 / args.Time;
+                Console.WriteLine("Current_FPS " + currentFPS);
+            }
+
+            Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
 
             base.OnUpdateFrame(args);
 
