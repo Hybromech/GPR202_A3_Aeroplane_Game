@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -65,6 +65,12 @@ namespace GPR202_Assessment3
         public Vector3 Direction => (position + Front);
 
         private int planeShaderProgram;
+        
+        // PERFORMANCE OPTIMIZATION: Cached uniform locations.
+        private int modelLocation;
+        private int viewLocation;
+        private int projectionLocation;
+
         string vertexShaderCode =
             @"
                 #version 330 core
@@ -154,12 +160,11 @@ namespace GPR202_Assessment3
             model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationZ(rotation.Z) * Matrix4.CreateTranslation(position);
 
             GL.UseProgram(planeShaderProgram);
-            var loc0 = GL.GetUniformLocation(planeShaderProgram, "model");
-            GL.UniformMatrix4(loc0, true, ref model);
-            var loc1 = GL.GetUniformLocation(planeShaderProgram, "view");
-            GL.UniformMatrix4(loc1, true, ref view);
-            var loc2 = GL.GetUniformLocation(planeShaderProgram, "projection");
-            GL.UniformMatrix4(loc2, true, ref proj);
+            
+            // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
+            GL.UniformMatrix4(modelLocation, true, ref model);
+            GL.UniformMatrix4(viewLocation, true, ref view);
+            GL.UniformMatrix4(projectionLocation, true, ref proj);
 
             GL.BindVertexArray(vao);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
@@ -233,6 +238,11 @@ namespace GPR202_Assessment3
             GL.DeleteShader(vertexShaderObject);
             GL.DeleteShader(fragmentShaderObject);
 
+            // PERFORMANCE OPTIMIZATION: Cache uniform locations once after linking.
+            modelLocation = GL.GetUniformLocation(planeShaderProgram, "model");
+            viewLocation = GL.GetUniformLocation(planeShaderProgram, "view");
+            projectionLocation = GL.GetUniformLocation(planeShaderProgram, "projection");
+
             GL.UseProgram(planeShaderProgram);
         }
 
@@ -265,22 +275,17 @@ namespace GPR202_Assessment3
                 VertexData vertex = 
                     new VertexData(model.Meshes[0].Vertices[i].X, model.Meshes[0].Vertices[i].Y, model.Meshes[0].Vertices[i].Z,
                                        model.Meshes[0].TextureCoordinateChannels[0][i].X, model.Meshes[0].TextureCoordinateChannels[0][i].Y);
-                //Console.WriteLine("V " + model.Meshes[0].Vertices[i].X + ", " + model.Meshes[0].Vertices[i].Y + ", " + model.Meshes[0].Vertices[i].Z);
                 vertexdata.Add(vertex);
             }
 
             indices = new List<uint>();
             for (int i = 0; i < model.Meshes[0].FaceCount; i++)
             {
-                string debugF = "F: ";
                 Assimp.Face face = model.Meshes[0].Faces[i];
                 for (int j = 0; j < face.IndexCount; j++)
                 {
-                    debugF += (uint)face.Indices[j] + ", ";
                     indices.Add((uint)face.Indices[j]);
                 }
-                debugF += "\n";
-                //Console.Write(debugF);
             }
 
             // Load Texture

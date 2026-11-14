@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -69,6 +69,11 @@ namespace GPR202_Assessment3
         };
 
         public int skyboxShaderProgram;
+        
+        // PERFORMANCE OPTIMIZATION: Cached uniform locations.
+        private int viewLocation;
+        private int projectionLocation;
+
         string skyboxVertShader =
             @"
                 #version 330 core
@@ -113,10 +118,10 @@ namespace GPR202_Assessment3
         public void Draw(Matrix4 view, Matrix4 proj)
         {
             GL.UseProgram(skyboxShaderProgram);
-            var loc1 = GL.GetUniformLocation(skyboxShaderProgram, "view");
-            GL.UniformMatrix4(loc1, true, ref view);
-            var loc2 = GL.GetUniformLocation(skyboxShaderProgram, "projection");
-            GL.UniformMatrix4(loc2, true, ref proj);
+            
+            // PERFORMANCE OPTIMIZATION: Use cached uniform locations.
+            GL.UniformMatrix4(viewLocation, true, ref view);
+            GL.UniformMatrix4(projectionLocation, true, ref proj);
 
             GL.BindVertexArray(vao);
             GL.ActiveTexture(TextureUnit.Texture0);
@@ -197,6 +202,10 @@ namespace GPR202_Assessment3
             GL.DetachShader(skyboxShaderProgram, fragmentShaderObject);
             GL.DeleteShader(vertexShaderObject);
             GL.DeleteShader(fragmentShaderObject);
+
+            // PERFORMANCE OPTIMIZATION: Cache uniform locations once on startup.
+            viewLocation = GL.GetUniformLocation(skyboxShaderProgram, "view");
+            projectionLocation = GL.GetUniformLocation(skyboxShaderProgram, "projection");
 
             GL.UseProgram(skyboxShaderProgram);
             GL.Uniform1(GL.GetUniformLocation(skyboxShaderProgram, "skybox"), 0);

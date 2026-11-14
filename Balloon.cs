@@ -1,16 +1,8 @@
-﻿using Assimp.Configs;
-using Assimp;
-using OpenTK.Mathematics;
-using StbImageSharp;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
 using Assimp;
 using Assimp.Configs;
-using Assimp.Unmanaged;
-using OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using StbImageSharp;
@@ -19,16 +11,24 @@ namespace GPR202_Assessment3
 {
     public class Balloon : GameObject
     {
-        List<VertexData> vertexdata;
-        List<uint> indices;
+        private List<VertexData> vertexdata;
+        private List<uint> indices;
 
         private int balloonShaderProgram;
-        string vertexShaderCode =
+
+        // PERFORMANCE OPTIMIZATION: Cached uniform locations.
+        // Since multiple balloons are rendered every frame, querying uniform locations 
+        // per-balloon per-frame causes severe performance bottlenecks. Caching them eliminates this.
+        private int modelLocation;
+        private int viewLocation;
+        private int projectionLocation;
+
+        private readonly string vertexShaderCode =
             @"
                 #version 330 core
 
-                layout (location  =0) in vec3 aPosition;
-                layout(location = 1) in vec2 aTexCoord;
+                layout (location = 0) in vec3 aPosition;
+                layout (location = 1) in vec2 aTexCoord;
 
                 uniform mat4 model;
                 uniform mat4 view;
@@ -40,15 +40,13 @@ namespace GPR202_Assessment3
                 {
                     texCoord = aTexCoord;
                     gl_Position = vec4(aPosition, 1.0f) * model * view * projection;
-                    
                 }";
 
-        string fragShaderCode =
+        private readonly string fragShaderCode =
         @"
                 #version 330 core
 
                 out vec4 pixelColor;
-
                 in vec2 texCoord;
 
                 uniform sampler2D texture0;
@@ -75,17 +73,13 @@ namespace GPR202_Assessment3
             model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateTranslation(position);
 
             GL.UseProgram(balloonShaderProgram);
-            var loc0 = GL.GetUniformLocation(balloonShaderProgram, "model");
-            GL.UniformMatrix4(loc0, true, ref model);
-            var loc1 = GL.GetUniformLocation(balloonShaderProgram, "view");
-            GL.UniformMatrix4(loc1, true, ref view);
-            var loc2 = GL.GetUniformLocation(balloonShaderProgram, "projection");
-            GL.UniformMatrix4(loc2, true, ref proj);
+
+            // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation.
+            GL.UniformMatrix4(modelLocation, true, ref model);
+            GL.UniformMatrix4(viewLocation, true, ref view);
+            GL.UniformMatrix4(projectionLocation, true, ref proj);
 
             GL.BindVertexArray(vao);
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
-
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
@@ -94,7 +88,6 @@ namespace GPR202_Assessment3
 
         private void Setup()
         {
-            // OpenGL Objects
             vbo = GL.GenBuffer();
             vao = GL.GenVertexArray();
             GL.BindVertexArray(vao);
@@ -103,11 +96,11 @@ namespace GPR202_Assessment3
             List<float> vbodata = new List<float>();
             for (int i = 0; i < vertexdata.Count; i++)
             {
-                vbodata.Add(vertexdata[i].x);   // x position
-                vbodata.Add(vertexdata[i].y);   // y position
-                vbodata.Add(vertexdata[i].z);   // z position
-                vbodata.Add(vertexdata[i].u);   // u texcoord
-                vbodata.Add(vertexdata[i].v);   // v texcoord
+                vbodata.Add(vertexdata[i].x);
+                vbodata.Add(vertexdata[i].y);
+                vbodata.Add(vertexdata[i].z);
+                vbodata.Add(vertexdata[i].u);
+                vbodata.Add(vertexdata[i].v);
             }
             float[] _vbo = vbodata.ToArray();
 
@@ -122,28 +115,14 @@ namespace GPR202_Assessment3
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
             GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(uint), _ebo, BufferUsageHint.StaticDraw);
 
-            // Vertex and Fragment Shaders
             int vertexShaderObject = GL.CreateShader(ShaderType.VertexShader);
             GL.ShaderSource(vertexShaderObject, vertexShaderCode);
             GL.CompileShader(vertexShaderObject);
-
-            string vertexShaderInfo = GL.GetShaderInfoLog(vertexShaderObject);
-            if (vertexShaderInfo != string.Empty)
-            {
-                Console.WriteLine("BALLOON VERT: " + vertexShaderInfo);
-            }
 
             int fragmentShaderObject = GL.CreateShader(ShaderType.FragmentShader);
             GL.ShaderSource(fragmentShaderObject, fragShaderCode);
             GL.CompileShader(fragmentShaderObject);
 
-            string fragmentShaderInfo = GL.GetShaderInfoLog(fragmentShaderObject);
-            if (fragmentShaderInfo != string.Empty)
-            {
-                Console.WriteLine("BALLOON FRAG: " + fragmentShaderInfo);
-            }
-
-            // create shader program
             balloonShaderProgram = GL.CreateProgram();
             GL.AttachShader(balloonShaderProgram, vertexShaderObject);
             GL.AttachShader(balloonShaderProgram, fragmentShaderObject);
@@ -154,58 +133,42 @@ namespace GPR202_Assessment3
             GL.DeleteShader(vertexShaderObject);
             GL.DeleteShader(fragmentShaderObject);
 
+            // PERFORMANCE OPTIMIZATION: Cache uniform locations once after shader linking.
+            modelLocation = GL.GetUniformLocation(balloonShaderProgram, "model");
+            viewLocation = GL.GetUniformLocation(balloonShaderProgram, "view");
+            projectionLocation = GL.GetUniformLocation(balloonShaderProgram, "projection");
+
             GL.UseProgram(balloonShaderProgram);
         }
 
         private void ImportModelFile()
         {
             string modelName = "balloon.obj";
-            string fileName = "Resource/" +
-                "Model/" + modelName;
+            string fileName = "Resource/Model/" + modelName;
 
-            //Create a new importer
             AssimpContext importer = new AssimpContext();
-
-            //This is how we add a configuration (each config is its own class)
             NormalSmoothingAngleConfig config = new NormalSmoothingAngleConfig(66.0f);
             importer.SetConfig(config);
 
-            //This is how we add a logging callback 
-            LogStream logstream = new LogStream(delegate (String msg, String userData) {
-                Console.WriteLine(msg);
-            });
-            logstream.Attach();
-
-            //Import the model. All configs are set. The model
-            //is imported, loaded into managed memory. Then the unmanaged memory is released, and everything is reset.
             Scene model = importer.ImportFile(fileName, PostProcessSteps.Triangulate);
 
-            // Load the model data into own structures
             vertexdata = new List<VertexData>();
             for (int i = 0; i < model.Meshes[0].VertexCount; i++)
             {
                 VertexData vertex =
                     new VertexData(model.Meshes[0].Vertices[i].X, model.Meshes[0].Vertices[i].Y, model.Meshes[0].Vertices[i].Z,
                                        model.Meshes[0].TextureCoordinateChannels[0][i].X, model.Meshes[0].TextureCoordinateChannels[0][i].Y);
-                //Console.WriteLine("V " + model.Meshes[0].Vertices[i].X + ", " + model.Meshes[0].Vertices[i].Y + ", " + model.Meshes[0].Vertices[i].Z);
                 vertexdata.Add(vertex);
             }
 
             indices = new List<uint>();
             for (int i = 0; i < model.Meshes[0].FaceCount; i++)
             {
-                string debugF = "F: ";
                 Assimp.Face face = model.Meshes[0].Faces[i];
                 for (int j = 0; j < face.IndexCount; j++)
-                {
-                    debugF += (uint)face.Indices[j] + ", ";
                     indices.Add((uint)face.Indices[j]);
-                }
-                debugF += "\n";
-                //Console.Write(debugF);
             }
 
-            // Load Texture
             textureHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
@@ -225,8 +188,6 @@ namespace GPR202_Assessment3
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapR, (int)OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge);
-
-            Console.WriteLine("Succesfully loaded " + modelName + " with " + model.Meshes[0].Vertices.Count + " vertices.");
 
             importer.Dispose();
         }

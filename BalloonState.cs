@@ -1,4 +1,4 @@
-﻿using GPR202_Assessment3;
+using GPR202_Assessment3;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,8 +52,10 @@ namespace GPR_Command
             {
                 rotation += new Vector3(0f, deltaT * ROTATE_SPEED, 0f);
 
-                // Test distance between this balloon and plane. If lower than collect threshold, trigger collection.
-                if (Vector3.Distance(position + new Vector3(0f, 5.0f, 0f), playerpos) < 15.0f)
+                // PERFORMANCE OPTIMIZATION: Use DistanceSquared to avoid expensive square root 
+                // calculations (sqrt) during per-frame collision checks.
+                float collectThresholdSq = 15.0f * 15.0f;
+                if (Vector3.DistanceSquared(position + new Vector3(0f, 5.0f, 0f), playerpos) < collectThresholdSq)
                 {
                     collected = true;
                     animate = 0.0001f;

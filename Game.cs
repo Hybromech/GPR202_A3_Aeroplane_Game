@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -133,12 +133,14 @@ namespace GPR202_Assessment3
             plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], deltatime);
 
             // Plane can collect Balloons!
-            for (int i = 0; i < m_balloons.Count; i++)
+            for (int i = m_balloons.Count - 1; i >= 0; i--)
             {
                 bool collected = m_balloons[i].collected;
+                // PERFORMANCE OPTIMIZATION: Remove collected balloons from the list in reverse order 
+                // to prevent memory leaks and unnecessary per-frame updates on dead objects.
                 if (m_balloons[i].Update(plane.position, deltatime))
                 {
-                    // Destroy balloon.
+                    m_balloons.RemoveAt(i);
                 } 
                 else
                 {
