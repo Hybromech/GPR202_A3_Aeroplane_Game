@@ -134,7 +134,9 @@ namespace GPR202_Assessment3
             float rotY = (float)MathHelper.DegreesToRadians(180.0f + cam.Yaw);
             plane.SetRotation(new Vector3(0f, rotY, 0f));
             plane.UpdateVertices();
-            plane.position -= Vector3.Normalize(plane.Right) * plane.FlySpeed * (float)args.Time;
+            // PERFORMANCE OPTIMIZATION: plane.Right is already normalized in Plane.cs, 
+            // so remove the redundant Vector3.Normalize() call here.
+            plane.position -= plane.Right * plane.FlySpeed * deltatime;
 
             plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], deltatime);
 

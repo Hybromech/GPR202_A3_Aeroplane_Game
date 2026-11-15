@@ -52,9 +52,22 @@
               "RelativeDocumentMoniker": "Game.cs",
               "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Game.cs",
               "RelativeToolTip": "Game.cs",
-              "ViewState": "AgIAAHoAAAAAAAAAAAAcwIQAAAAiAAAAAAAAAA==",
+              "ViewState": "AgIAAHUAAAAAAAAAAAAIwIcAAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-11-13T14:57:41.044Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Plane.cs",
+              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
+              "RelativeDocumentMoniker": "Plane.cs",
+              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
+              "RelativeToolTip": "Plane.cs",
+              "ViewState": "AgIAAI4AAAAAAAAAAAAuwJsAAAAzAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-13T14:57:28.929Z",
               "EditorCaption": ""
             },
             {
@@ -67,8 +80,7 @@
               "RelativeToolTip": "BalloonState.cs",
               "ViewState": "AgIAAC0AAAAAAAAAAAAkwEgAAAAmAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-11-14T14:22:29.333Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-11-14T14:22:29.333Z"
             },
             {
               "$type": "Document",
@@ -129,19 +141,6 @@
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-11-13T14:58:21.436Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "Plane.cs",
-              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
-              "RelativeDocumentMoniker": "Plane.cs",
-              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
-              "RelativeToolTip": "Plane.cs",
-              "ViewState": "AgIAAHkAAAAAAAAAAAA0wH0AAAAUAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-11-13T14:57:28.929Z",
-              "EditorCaption": ""
             }
           ]
         }

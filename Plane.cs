@@ -146,13 +146,22 @@ namespace GPR202_Assessment3
 
         public void UpdateVertices()
         {
-            front.X = (float)Math.Cos(MathHelper.DegreesToRadians(Pitch)) * (float)Math.Cos(MathHelper.DegreesToRadians(Yaw));
-            front.Y = (float)Math.Sin(MathHelper.DegreesToRadians(Pitch));
-            front.Z = (float)Math.Cos(MathHelper.DegreesToRadians(Pitch)) * (float)Math.Sin(MathHelper.DegreesToRadians(Yaw));
+            // PERFORMANCE OPTIMIZATION: Convert degrees to radians once and cache trig results
+            float pitchRad = MathHelper.DegreesToRadians(Pitch);
+            float yawRad = MathHelper.DegreesToRadians(Yaw);
+
+            float cosPitch = (float)Math.Cos(pitchRad);
+            float sinPitch = (float)Math.Sin(pitchRad);
+            float cosYaw = (float)Math.Cos(yawRad);
+            float sinYaw = (float)Math.Sin(yawRad);
+
+            front.X = cosPitch * cosYaw;
+            front.Y = sinPitch;
+            front.Z = cosPitch * sinYaw;
             front = Vector3.Normalize(front);
 
-            right = Vector3.Normalize(Vector3.Cross(Front, Vector3.UnitY));
-            up = Vector3.Normalize(Vector3.Cross(Right, Front));
+            right = Vector3.Normalize(Vector3.Cross(front, Vector3.UnitY));
+            up = Vector3.Normalize(Vector3.Cross(right, front));
         }
 
         public void Draw(Matrix4 view, Matrix4 proj, Camera cam)
