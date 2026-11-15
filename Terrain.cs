@@ -8,25 +8,23 @@ using StbImageSharp;
 
 namespace GPR202_Assessment3
 {
-    public class Terrain : GameObject
+    public class Terrain
     {
         public static readonly uint width = 2048;
         public static readonly uint length = 2048;
         public static float OffsetY = -600;
         private static float[,] heightmap;
 
-        private List<float> vertexdata;
-        List<uint> indices;
-
-        private int heightmapHandle;
+        private List<TerrainChunk> chunks;
+        private int textureHandle;
         private int terrainShaderProgram;
 
-        // PERFORMANCE OPTIMIZATION: Cached uniform locations.
-        // Querying uniform locations via string names every frame forces expensive driver 
-        // string lookups. Caching them once during Setup() eliminates per-frame CPU overhead.
+        // Cached uniform locations
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
+
+        private const uint CHUNK_SIZE = 128;
 
         string vertexShaderCode =
             @"
@@ -67,30 +65,22 @@ namespace GPR202_Assessment3
         {
             heightmap = new float[width, length];
             ImportHeightMap();
-            Setup();
+            SetupShaders();
+            CreateChunks();
         }
 
         public void Draw(Matrix4 view, Matrix4 proj)
         {
-            scale = 1f;
-            position = new Vector3(0f, OffsetY, 0f);
-            model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateTranslation(position);
-
             GL.UseProgram(terrainShaderProgram);
-
-            // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
-            GL.UniformMatrix4(modelLocation, true, ref model);
-            GL.UniformMatrix4(viewLocation, true, ref view);
-            GL.UniformMatrix4(projectionLocation, true, ref proj);
-
-            GL.BindVertexArray(vao);
-            // Note: EBO and VBO are already bound within the VAO state during Setup(). 
-            // Binding vertex array alone is sufficient in modern OpenGL core profiles.
 
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indices.Count, DrawElementsType.UnsignedInt, 0);
+            // Draw each terrain chunk
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                chunks[i].Draw(view, proj, terrainShaderProgram, modelLocation, viewLocation, projectionLocation);
+            }
         }
 
         public static float GetHeightMapAt(int x, int z)
@@ -105,7 +95,7 @@ namespace GPR202_Assessment3
 
         private void ImportHeightMap()
         {
-            heightmapHandle = GL.GenTexture();
+            int heightmapHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, heightmapHandle);
 
             string hm_fullpath = "Resource/Terrain/heightmap.png";
@@ -114,7 +104,8 @@ namespace GPR202_Assessment3
                 throw new FileNotFoundException("Texture not found at '" + hm_fullpath + "'");
             }
 
-            vertexdata = new List<float>();
+            float[,] rawHeightmap = new float[width, length];
+
             using (var stream = File.OpenRead(hm_fullpath))
             {
                 ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
@@ -123,22 +114,21 @@ namespace GPR202_Assessment3
                 {
                     for (uint z = 0; z < length; z++)
                     {
-                        byte texel = image.Data[(x + width * z) * 4];
-                        float r = image.Data[(x + width * z) * 4] + 0;
+                        float r = image.Data[(x + width * z) * 4];
                         float g = image.Data[(x + width * z) * 4] + 1;
                         float b = image.Data[(x + width * z) * 4] + 2;
                         float h = ((r + g + b) / 3) * 4f;
-                        heightmap[x, z] = h;
+                        rawHeightmap[x, z] = h;
                     }
                 }
 
+                // Apply smoothing and store in global heightmap
+                int smooth = 4;
                 for (uint x = 0; x < width; x++)
                 {
                     for (uint z = 0; z < length; z++)
                     {
-                        float h = heightmap[x, z];
-
-                        int smooth = 4;
+                        float h = rawHeightmap[x, z];
                         if (x > smooth && x < width - 1 - smooth && z > smooth && z < length - 1 - smooth)
                         {
                             float sum = 0;
@@ -147,45 +137,20 @@ namespace GPR202_Assessment3
                             {
                                 for (int j = -smooth; j < smooth; j++)
                                 {
-                                    sum += heightmap[x + i, z + j];
+                                    sum += rawHeightmap[x + i, z + j];
                                     e++;
                                 }
                             }
                             h = sum / e;
                         }
-
-                        float TILE = 1.0f;
-                        float xpos = (-width / 2.0f) + x;
-                        float zpos = (-length / 2.0f) + z;
-
-                        vertexdata.Add(xpos * TILE);
-                        vertexdata.Add(h);
-                        vertexdata.Add(zpos * TILE);
-
-                        vertexdata.Add((1.0f / 2048f) * x);
-                        vertexdata.Add((1.0f / 2048f) * z);
-                    }
-                }
-
-                indices = new List<uint>();
-                for (uint i = 0; i < (width - 1); i++)
-                {
-                    for (uint j = 0; j < (length - 1); j++)
-                    {
-                        indices.Add((j * width) + i);
-                        indices.Add((j * width) + i + 1);
-                        indices.Add(((j + 1) * width) + i + 1);
-
-                        indices.Add(((j + 1) * width) + i + 1);
-                        indices.Add(((j + 1) * width) + i);
-                        indices.Add((j * width) + i);
+                        heightmap[x, z] = h;
                     }
                 }
             }
 
-            GL.BindTexture(TextureTarget.Texture2D, 0);
             GL.DeleteTexture(heightmapHandle);
 
+            // Load Terrain Texture
             textureHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
@@ -209,26 +174,8 @@ namespace GPR202_Assessment3
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapR, (int)OpenTK.Graphics.OpenGL4.TextureWrapMode.Repeat);
         }
 
-        private void Setup()
+        private void SetupShaders()
         {
-            vbo = GL.GenBuffer();
-            vao = GL.GenVertexArray();
-            GL.BindVertexArray(vao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
-
-            float[] _vbo = vertexdata.ToArray();
-
-            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * _vbo.Length, _vbo, BufferUsageHint.StaticDraw);
-            GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
-            GL.EnableVertexAttribArray(1);
-
-            ebo = GL.GenBuffer();
-            uint[] _ebo = indices.ToArray();
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-            GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(uint), _ebo, BufferUsageHint.StaticDraw);
-
             int vertexShaderObject = GL.CreateShader(ShaderType.VertexShader);
             GL.ShaderSource(vertexShaderObject, vertexShaderCode);
             GL.CompileShader(vertexShaderObject);
@@ -247,12 +194,125 @@ namespace GPR202_Assessment3
             GL.DeleteShader(vertexShaderObject);
             GL.DeleteShader(fragmentShaderObject);
 
-            // PERFORMANCE OPTIMIZATION: Cache uniform locations once after linking.
             modelLocation = GL.GetUniformLocation(terrainShaderProgram, "model");
             viewLocation = GL.GetUniformLocation(terrainShaderProgram, "view");
             projectionLocation = GL.GetUniformLocation(terrainShaderProgram, "projection");
+        }
 
-            GL.UseProgram(terrainShaderProgram);
+        private void CreateChunks()
+        {
+            chunks = new List<TerrainChunk>();
+
+            for (uint x = 0; x < width; x += CHUNK_SIZE)
+            {
+                for (uint z = 0; z < length; z += CHUNK_SIZE)
+                {
+                    chunks.Add(new TerrainChunk(x, z, CHUNK_SIZE, heightmap));
+                }
+            }
+        }
+    }
+
+    // PERFORMANCE OPTIMIZATION: TerrainChunk encapsulates sub-mesh VBOs, VAOs, and EBOs 
+    // for spatial division and modular rendering.
+    public class TerrainChunk
+    {
+        private int vao, vbo, ebo;
+        private int indexCount;
+        private Matrix4 model;
+
+        public TerrainChunk(uint startX, uint startZ, uint size, float[,] hm)
+        {
+            List<float> vertexdata = new List<float>();
+            List<uint> indices = new List<uint>();
+
+            // BUG FIX: Clamp endX and endZ to Terrain.width - 1 and Terrain.length - 1 
+            // to prevent index out of bounds exceptions on the final edge chunks.
+            uint endX = Math.Min(startX + size, Terrain.width - 1);
+            uint endZ = Math.Min(startZ + size, Terrain.length - 1);
+
+            Dictionary<long, uint> vertexMap = new Dictionary<long, uint>();
+            uint localIndex = 0;
+
+            for (uint x = startX; x <= endX; x++)
+            {
+                for (uint z = startZ; z <= endZ; z++)
+                {
+                    float h = hm[x, z];
+                    float TILE = 1.0f;
+                    float xpos = (-Terrain.width / 2.0f) + x;
+                    float zpos = (-Terrain.length / 2.0f) + z;
+
+                    vertexdata.Add(xpos * TILE);
+                    vertexdata.Add(h);
+                    vertexdata.Add(zpos * TILE);
+
+                    vertexdata.Add((1.0f / 2048f) * x);
+                    vertexdata.Add((1.0f / 2048f) * z);
+
+                    vertexMap[(long)x * 100000 + z] = localIndex++;
+                }
+            }
+
+            for (uint x = startX; x < endX; x++)
+            {
+                for (uint z = startZ; z < endZ; z++)
+                {
+                    uint i0 = vertexMap[(long)x * 100000 + z];
+                    uint i1 = vertexMap[(long)(x + 1) * 100000 + z];
+                    uint i2 = vertexMap[(long)(x + 1) * 100000 + (z + 1)];
+                    uint i3 = vertexMap[(long)x * 100000 + (z + 1)];
+
+                    indices.Add(i0);
+                    indices.Add(i1);
+                    indices.Add(i2);
+
+                    indices.Add(i2);
+                    indices.Add(i3);
+                    indices.Add(i0);
+                }
+            }
+
+            indexCount = indices.Count;
+            Vector3 position = new Vector3(0f, Terrain.OffsetY, 0f);
+            model = Matrix4.Identity * Matrix4.CreateTranslation(position);
+
+            SetupBuffers(vertexdata, indices);
+        }
+
+        private void SetupBuffers(List<float> vertexdata, List<uint> indices)
+        {
+            vao = GL.GenVertexArray();
+            vbo = GL.GenBuffer();
+            ebo = GL.GenBuffer();
+
+            GL.BindVertexArray(vao);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+            float[] _vbo = vertexdata.ToArray();
+            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * _vbo.Length, _vbo, BufferUsageHint.StaticDraw);
+
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
+            GL.EnableVertexAttribArray(1);
+
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
+            uint[] _ebo = indices.ToArray();
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(uint), _ebo, BufferUsageHint.StaticDraw);
+
+            GL.BindVertexArray(0);
+        }
+
+        public void Draw(Matrix4 view, Matrix4 proj, int shaderProgram, int modelLoc, int viewLoc, int projLoc)
+        {
+            GL.UniformMatrix4(modelLoc, true, ref model);
+            GL.UniformMatrix4(viewLoc, true, ref view);
+            GL.UniformMatrix4(projLoc, true, ref proj);
+
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
+            GL.BindVertexArray(0);
         }
     }
 }
