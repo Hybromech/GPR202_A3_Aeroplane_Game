@@ -45,6 +45,11 @@ namespace GPR202_Assessment3
         private Vector2 _smoothedLook = Vector2.Zero;
         private const float LookSmoothing = 0.515f;   // 0 = raw, 1 = very heavy // 0.015f
 
+        // Fixed timestep
+        private float _accumulator = 0f;
+        private const float FixedDeltaTime = 1f / 60f;   // 60 Hz physics
+        private float smoothedDeltaTime = 0.016f;
+
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1280, 720));
@@ -119,10 +124,10 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Console.WriteLine("Current_FPS " + currentFPS);
+                //Console.WriteLine("Current_FPS " + currentFPS);
             }
 
-            Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+            //Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
 
             base.OnUpdateFrame(args);
 
@@ -133,38 +138,45 @@ namespace GPR202_Assessment3
 
             float deltatime = (float)args.Time;
 
+            // ----- Input (variable timestep) -----
             HandleInput(deltatime);
 
-            // Rotate & Move Plane
-            float rotY = (float)MathHelper.DegreesToRadians(180.0f + cam.Yaw);
+            // Apply rotation every frame so the plane follows the camera more tightly
+            // (this softens the lag while still looking slightly delayed)
+            float rotY = MathHelper.DegreesToRadians(180.0f + cam.Yaw);
             plane.SetRotation(new Vector3(0f, rotY, 0f));
             plane.UpdateVertices();
-            // PERFORMANCE OPTIMIZATION: plane.Right is already normalized in Plane.cs, 
-            // so remove the redundant Vector3.Normalize() call here.
-            plane.position -= plane.Right * plane.FlySpeed * deltatime;
 
-            plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], deltatime);
+            // ----- Fixed timestep – only movement & balloons -----
+            _accumulator += deltatime;
 
-            // Plane can collect Balloons!
-            for (int i = m_balloons.Count - 1; i >= 0; i--)
+            while (_accumulator >= FixedDeltaTime)
             {
-                bool collected = m_balloons[i].collected;
-                // PERFORMANCE OPTIMIZATION: Remove collected balloons from the list in reverse order 
-                // to prevent memory leaks and unnecessary per-frame updates on dead objects.
-                if (m_balloons[i].Update(plane.position, deltatime))
+                // Constant-speed movement
+                plane.position -= plane.Right * plane.FlySpeed * FixedDeltaTime;
+
+                // Lift (if you still use it)
+                plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], FixedDeltaTime);
+
+                // Balloons
+                for (int i = m_balloons.Count - 1; i >= 0; i--)
                 {
-                    m_balloons.RemoveAt(i);
-                } 
-                else
-                {
-                    if (m_balloons[i].collected != collected)
+                    bool wasCollected = m_balloons[i].collected;
+
+                    if (m_balloons[i].Update(plane.position, FixedDeltaTime))
+                    {
+                        m_balloons.RemoveAt(i);
+                    }
+                    else if (m_balloons[i].collected != wasCollected)
                     {
                         balloons_left--;
                         Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
                     }
                 }
+
+                _accumulator -= FixedDeltaTime;
             }
-            
+
         }
 
         private bool firstMove = true;
@@ -204,38 +216,30 @@ namespace GPR202_Assessment3
         {
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            // update the uniform color
-            double timeValue = timer.Elapsed.TotalSeconds;
+            // Fixed camera position looking at the plane from a static vantage point
+            Vector3 fixedCamPos = new Vector3(0f, 150f, 300f);
+            //Console.WriteLine("plane.GetPosition() " + plane.GetPosition());
+            Matrix4 view = Matrix4.LookAt(fixedCamPos, new Vector3(-1.1493115f, -0.690963f, 0.20048559f), new Vector3(0f, 1f, 0f));
 
-            // Setup camera position and rotation
-            Vector3 cam_pos = new Vector3(0f, 0f, 0f);
-            Vector3 cam_dir = new Vector3(cam.Yaw, 20.0f, 0.0f);
-            float distance = 11.0f;
-            cam_pos.X = (float)(distance * -Math.Sin(cam_dir.X * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
-            cam_pos.Y = (float)(distance * -Math.Sin((cam_dir.Y) * (Math.PI / 180)));
-            cam_pos.Z = (float)(-distance * Math.Cos((cam_dir.X) * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
-            Matrix4 view = Matrix4.LookAt(plane.GetPosition() - cam_pos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
-
-            // Skybox
             Matrix4 proj = cam.GetProjectionMatrix();
+
+            // Draw Skybox
             GL.DepthFunc(DepthFunction.Lequal);
             skybox.Draw(view, proj);
             GL.DepthFunc(DepthFunction.Less);
 
-
             // Draw Plane
-            plane.Draw(view, proj, cam);
+            plane.Draw(view, proj);
 
             // Draw Balloons
             for (int i = 0; i < m_balloons.Count; i++)
+            {
                 balloon.Draw(m_balloons[i].position, m_balloons[i].rotation, m_balloons[i].scale, view, proj);
+            }
 
-            // Draw Landscape
+            // Draw Terrain with Frustum Culling
             terrain.Draw(view, proj);
 
-
-
-            // Finalise Frame
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);
         }

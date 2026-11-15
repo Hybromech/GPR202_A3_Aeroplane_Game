@@ -117,7 +117,7 @@ namespace GPR202_Assessment3
         private bool firstMove = true;
         private Vector2 lastPos;
         private float Sensitivity = -1f;
-        public float FlySpeed = 35.0f;
+        public float FlySpeed = 10.0f; //35.0f
         public float TurnSpeed = 256.0f;
         public float LiftSpeed = 256.0f; // 256.0f
         public float Turn = 0f;
@@ -164,7 +164,7 @@ namespace GPR202_Assessment3
             up = Vector3.Normalize(Vector3.Cross(right, front));
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, Camera cam)
+        public void Draw(Matrix4 view, Matrix4 proj)
         {
             model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationZ(rotation.Z) * Matrix4.CreateTranslation(position);
 
