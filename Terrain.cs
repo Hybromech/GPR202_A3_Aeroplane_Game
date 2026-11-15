@@ -73,13 +73,18 @@ namespace GPR202_Assessment3
         {
             GL.UseProgram(terrainShaderProgram);
 
+            // PERFORMANCE OPTIMIZATION: Upload view and projection matrices ONCE per frame 
+            // instead of repeatedly inside every individual chunk draw call.
+            GL.UniformMatrix4(viewLocation, true, ref view);
+            GL.UniformMatrix4(projectionLocation, true, ref proj);
+
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
             // Draw each terrain chunk
             for (int i = 0; i < chunks.Count; i++)
             {
-                chunks[i].Draw(view, proj, terrainShaderProgram, modelLocation, viewLocation, projectionLocation);
+                chunks[i].Draw(terrainShaderProgram, modelLocation);
             }
         }
 
@@ -213,8 +218,6 @@ namespace GPR202_Assessment3
         }
     }
 
-    // PERFORMANCE OPTIMIZATION: TerrainChunk encapsulates sub-mesh VBOs, VAOs, and EBOs 
-    // for spatial division and modular rendering.
     public class TerrainChunk
     {
         private int vao, vbo, ebo;
@@ -226,13 +229,16 @@ namespace GPR202_Assessment3
             List<float> vertexdata = new List<float>();
             List<uint> indices = new List<uint>();
 
-            // BUG FIX: Clamp endX and endZ to Terrain.width - 1 and Terrain.length - 1 
-            // to prevent index out of bounds exceptions on the final edge chunks.
             uint endX = Math.Min(startX + size, Terrain.width - 1);
             uint endZ = Math.Min(startZ + size, Terrain.length - 1);
 
-            Dictionary<long, uint> vertexMap = new Dictionary<long, uint>();
-            uint localIndex = 0;
+            uint spanX = (endX - startX) + 1;
+            uint spanZ = (endZ - startZ) + 1;
+
+            // PERFORMANCE OPTIMIZATION: Pre-allocate vertex and index capacities 
+            // to eliminate internal array resizing allocations during generation.
+            vertexdata.Capacity = (int)(spanX * spanZ * 5);
+            indices.Capacity = (int)((spanX - 1) * (spanZ - 1) * 6);
 
             for (uint x = startX; x <= endX; x++)
             {
@@ -249,19 +255,19 @@ namespace GPR202_Assessment3
 
                     vertexdata.Add((1.0f / 2048f) * x);
                     vertexdata.Add((1.0f / 2048f) * z);
-
-                    vertexMap[(long)x * 100000 + z] = localIndex++;
                 }
             }
 
-            for (uint x = startX; x < endX; x++)
+            // PERFORMANCE OPTIMIZATION: Replaced slow Dictionary lookup with direct 
+            // mathematical 2D-to-1D grid index calculation.
+            for (uint x = 0; x < spanX - 1; x++)
             {
-                for (uint z = startZ; z < endZ; z++)
+                for (uint z = 0; z < spanZ - 1; z++)
                 {
-                    uint i0 = vertexMap[(long)x * 100000 + z];
-                    uint i1 = vertexMap[(long)(x + 1) * 100000 + z];
-                    uint i2 = vertexMap[(long)(x + 1) * 100000 + (z + 1)];
-                    uint i3 = vertexMap[(long)x * 100000 + (z + 1)];
+                    uint i0 = x * spanZ + z;
+                    uint i1 = (x + 1) * spanZ + z;
+                    uint i2 = (x + 1) * spanZ + (z + 1);
+                    uint i3 = x * spanZ + (z + 1);
 
                     indices.Add(i0);
                     indices.Add(i1);
@@ -304,11 +310,11 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, int shaderProgram, int modelLoc, int viewLoc, int projLoc)
+        public void Draw(int shaderProgram, int modelLoc)
         {
+            // PERFORMANCE OPTIMIZATION: Only upload the model matrix per chunk; 
+            // view and projection matrices are set once per frame in Terrain.Draw().
             GL.UniformMatrix4(modelLoc, true, ref model);
-            GL.UniformMatrix4(viewLoc, true, ref view);
-            GL.UniformMatrix4(projLoc, true, ref proj);
 
             GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
