@@ -130,6 +130,12 @@ namespace GPR202_Assessment3
 
             HandleInput(deltatime);
 
+            // Rotate & Move Plane
+            float rotY = (float)MathHelper.DegreesToRadians(180.0f + cam.Yaw);
+            plane.SetRotation(new Vector3(0f, rotY, 0f));
+            plane.UpdateVertices();
+            plane.position -= Vector3.Normalize(plane.Right) * plane.FlySpeed * (float)args.Time;
+
             plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], deltatime);
 
             // Plane can collect Balloons!
@@ -213,13 +219,6 @@ namespace GPR202_Assessment3
             cam_pos.Y = (float)(distance * -Math.Sin((cam_dir.Y) * (Math.PI / 180)));
             cam_pos.Z = (float)(-distance * Math.Cos((cam_dir.X) * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
             Matrix4 view = Matrix4.LookAt(plane.GetPosition() - cam_pos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
-
-            // Rotate & Move Plane
-            float rotY = (float)MathHelper.DegreesToRadians(180.0f + cam.Yaw);
-            plane.SetRotation(new Vector3(0f, rotY, 0f));
-            plane.UpdateVertices();
-            plane.position -= Vector3.Normalize(plane.Right) * plane.FlySpeed * (float)args.Time;
-
 
             // Skybox
             Matrix4 proj = cam.GetProjectionMatrix();
