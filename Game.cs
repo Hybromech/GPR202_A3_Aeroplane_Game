@@ -42,9 +42,14 @@ namespace GPR202_Assessment3
         float averageFPS = 0f;
         double currentFPS = 0f;
 
+        private Vector2 _smoothedLook = Vector2.Zero;
+        private const float LookSmoothing = 0.515f;   // 0 = raw, 1 = very heavy // 0.015f
+
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1280, 720));
+            this.VSync = VSyncMode.On;
+            CursorState = CursorState.Grabbed;
         }
 
         protected override void OnLoad()
@@ -166,39 +171,28 @@ namespace GPR202_Assessment3
         private Vector2 lastPos;
         private void HandleInput(float deltaT)
         {
-            // Keyboard
-            KeyboardState keyboard = KeyboardState;
-            if (keyboard.IsKeyDown(Keys.Escape))
+            if (KeyboardState.IsKeyDown(Keys.Escape))
                 Close();
 
-            // Mouse
-            MouseState mouse = this.MouseState;
-            if (firstMove) // this bool variable is initially set to true
-            {
-                lastPos = new Vector2(mouse.X, mouse.Y);
-                firstMove = false;
-            }
-            else
-            {
-                float TurnFactor = ((1.0f / viewport[2]) * mouse.X);
-                float TurnFactorN;
-                float midPoint = 0.5f;
-                if (TurnFactor > 0.5f)
-                {
-                    TurnFactor = 1 - TurnFactor;
-                    TurnFactorN = (1 - ((TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / (1 - midPoint))));
-                }
-                else
-                {
-                    TurnFactorN = (TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / midPoint);
-                }
+            if (!IsFocused)
+                return;
 
-                float deltaX = ((TurnFactorN - 0.5f) * 2f) * 0.1f;
+            var mouse = MouseState;
 
-                //Apply yaw rotation to camera and plane together
-                cam.Yaw -= deltaX * 1f * plane.TurnSpeed * deltaT;
-                plane.Yaw -= deltaX * -1f * plane.TurnSpeed * deltaT;
-            }
+            // Relative movement this frame
+            Vector2 rawDelta = new Vector2(mouse.Delta.X, mouse.Delta.Y);
+
+            // Light exponential smoothing (removes micro-stutters)
+            _smoothedLook = Vector2.Lerp(_smoothedLook, rawDelta, 1f - MathF.Pow(LookSmoothing, deltaT * 60f));
+
+            float yawDelta = _smoothedLook.X * plane.TurnSpeed * 0.09f * deltaT;
+            float pitchDelta = _smoothedLook.Y * plane.LiftSpeed * 0.5f * deltaT;   // optional
+
+            cam.Yaw -= yawDelta;
+            plane.Yaw += yawDelta;          // keep plane and camera in sync
+
+            // Optional vertical look / lift
+            // plane.Pitch = MathHelper.Clamp(plane.Pitch - pitchDelta, -30f, 30f);
         }
 
         protected override void OnMouseMove(MouseMoveEventArgs e)

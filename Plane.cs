@@ -119,7 +119,7 @@ namespace GPR202_Assessment3
         private float Sensitivity = -1f;
         public float FlySpeed = 35.0f;
         public float TurnSpeed = 256.0f;
-        public float LiftSpeed = 256.0f;
+        public float LiftSpeed = 256.0f; // 256.0f
         public float Turn = 0f;
         public float Lift = 0f;
 
