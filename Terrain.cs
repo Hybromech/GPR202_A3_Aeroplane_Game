@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Assimp;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -18,6 +19,7 @@ namespace GPR202_Assessment3
         private List<TerrainChunk> chunks;
         private int textureHandle;
         private int terrainShaderProgram;
+        private Frustum frustum;
 
         // Cached uniform locations
         private int modelLocation;
@@ -64,6 +66,7 @@ namespace GPR202_Assessment3
         public Terrain()
         {
             heightmap = new float[width, length];
+            frustum = new Frustum();
             ImportHeightMap();
             SetupShaders();
             CreateChunks();
@@ -74,17 +77,23 @@ namespace GPR202_Assessment3
             GL.UseProgram(terrainShaderProgram);
 
             // PERFORMANCE OPTIMIZATION: Upload view and projection matrices ONCE per frame 
-            // instead of repeatedly inside every individual chunk draw call.
             GL.UniformMatrix4(viewLocation, true, ref view);
             GL.UniformMatrix4(projectionLocation, true, ref proj);
 
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
-            // Draw each terrain chunk
+            // Update camera frustum planes from standard View-Projection matrix
+            Matrix4 viewProj = view * proj;
+            frustum.Update(viewProj);
+
+            // Draw only terrain chunks whose bounding spheres are visible within the camera frustum
             for (int i = 0; i < chunks.Count; i++)
             {
-                chunks[i].Draw(terrainShaderProgram, modelLocation);
+                if (chunks[i].IsInFrustum(frustum))
+                {
+                    chunks[i].Draw(modelLocation);
+                }
             }
         }
 
@@ -130,12 +139,9 @@ namespace GPR202_Assessment3
                     }
                 }
 
-                // PERFORMANCE OPTIMIZATION: Separable 1D Sliding Window Smoothing (Horizontal + Vertical Passes)
-                // Fixed C# unsigned promotion bug by using signed int loop variables.
                 int radius = 4;
                 float[,] tempMap = new float[width, length];
 
-                // Pass 1: Horizontal Smoothing (Parallelized per row)
                 Parallel.For(0, (int)length, z =>
                 {
                     for (int x = 0; x < width; x++)
@@ -156,7 +162,6 @@ namespace GPR202_Assessment3
                     }
                 });
 
-                // Pass 2: Vertical Smoothing (Parallelized per column)
                 Parallel.For(0, (int)width, x =>
                 {
                     for (int z = 0; z < length; z++)
@@ -180,7 +185,6 @@ namespace GPR202_Assessment3
 
             GL.DeleteTexture(heightmapHandle);
 
-            // Load Terrain Texture
             textureHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
@@ -243,11 +247,93 @@ namespace GPR202_Assessment3
         }
     }
 
+    public struct FrustumPlane
+    {
+        public Vector3 Normal;
+        public float D;
+
+        public void Set(float a, float b, float c, float d)
+        {
+            float length = (float)Math.Sqrt(a * a + b * b + c * c);
+            Normal = new Vector3(a / length, b / length, c / length);
+            D = d / length;
+        }
+
+        public float SignedDistanceTo(Vector3 point)
+        {
+            return Vector3.Dot(Normal, point) + D;
+        }
+    }
+
+    public class Frustum
+    {
+        private FrustumPlane[] planes = new FrustumPlane[6];
+
+        public void Update(Matrix4 viewProj)
+        {
+            // Left
+            planes[0].Set(
+                viewProj.M14 + viewProj.M11,
+                viewProj.M24 + viewProj.M21,
+                viewProj.M34 + viewProj.M31,
+                viewProj.M44 + viewProj.M41);
+
+            // Right
+            planes[1].Set(
+                viewProj.M14 - viewProj.M11,
+                viewProj.M24 - viewProj.M21,
+                viewProj.M34 - viewProj.M31,
+                viewProj.M44 - viewProj.M41);
+
+            // Bottom
+            planes[2].Set(
+                viewProj.M14 + viewProj.M12,
+                viewProj.M24 + viewProj.M22,
+                viewProj.M34 + viewProj.M32,
+                viewProj.M44 + viewProj.M42);
+
+            // Top
+            planes[3].Set(
+                viewProj.M14 - viewProj.M12,
+                viewProj.M24 - viewProj.M22,
+                viewProj.M34 - viewProj.M32,
+                viewProj.M44 - viewProj.M42);
+
+            // Near
+            planes[4].Set(
+                viewProj.M14 + viewProj.M13,
+                viewProj.M24 + viewProj.M23,
+                viewProj.M34 + viewProj.M33,
+                viewProj.M44 + viewProj.M43);
+
+            // Far
+            planes[5].Set(
+                viewProj.M14 - viewProj.M13,
+                viewProj.M24 - viewProj.M23,
+                viewProj.M34 - viewProj.M33,
+                viewProj.M44 - viewProj.M43);
+        }
+
+        public bool IsSphereVisible(Vector3 center, float radius)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                if (planes[i].SignedDistanceTo(center) < -radius)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
     public class TerrainChunk
     {
         private int vao, vbo, ebo;
         private int indexCount;
         private Matrix4 model;
+        private Vector3 sphereCenter;
+        private float sphereRadius;
 
         public TerrainChunk(uint startX, uint startZ, uint size, float[,] hm)
         {
@@ -260,31 +346,56 @@ namespace GPR202_Assessment3
             uint spanX = (endX - startX) + 1;
             uint spanZ = (endZ - startZ) + 1;
 
-            // PERFORMANCE OPTIMIZATION: Pre-allocate vertex and index capacities 
-            // to eliminate internal array resizing allocations during generation.
             vertexdata.Capacity = (int)(spanX * spanZ * 5);
             indices.Capacity = (int)((spanX - 1) * (spanZ - 1) * 6);
+
+            float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
+
+            List<Vector3> worldVertices = new List<Vector3>((int)(spanX * spanZ));
 
             for (uint x = startX; x <= endX; x++)
             {
                 for (uint z = startZ; z <= endZ; z++)
                 {
                     float h = hm[x, z];
-                    float TILE = 1.0f;
                     float xpos = (-Terrain.width / 2.0f) + x;
                     float zpos = (-Terrain.length / 2.0f) + z;
 
-                    vertexdata.Add(xpos * TILE);
+                    if (xpos < minX) minX = xpos;
+                    if (xpos > maxX) maxX = xpos;
+                    if (h < minY) minY = h;
+                    if (h > maxY) maxY = h;
+                    if (zpos < minZ) minZ = zpos;
+                    if (zpos > maxZ) maxZ = zpos;
+
+                    Vector3 worldPos = new Vector3(xpos, h + Terrain.OffsetY, zpos);
+                    worldVertices.Add(worldPos);
+
+                    vertexdata.Add(xpos);
                     vertexdata.Add(h);
-                    vertexdata.Add(zpos * TILE);
+                    vertexdata.Add(zpos);
 
                     vertexdata.Add((1.0f / 2048f) * x);
                     vertexdata.Add((1.0f / 2048f) * z);
                 }
             }
 
-            // PERFORMANCE OPTIMIZATION: Replaced slow Dictionary lookup with direct 
-            // mathematical 2D-to-1D grid index calculation.
+            // Calculate precise bounding sphere for robust frustum culling
+            Vector3 minBounds = new Vector3(minX, minY + Terrain.OffsetY, minZ);
+            Vector3 maxBounds = new Vector3(maxX, maxY + Terrain.OffsetY, maxZ);
+            sphereCenter = (minBounds + maxBounds) * 0.5f;
+
+            sphereRadius = 0f;
+            for (int i = 0; i < worldVertices.Count; i++)
+            {
+                float dist = Vector3.Distance(sphereCenter, worldVertices[i]);
+                if (dist > sphereRadius)
+                {
+                    sphereRadius = dist;
+                }
+            }
+
             for (uint x = 0; x < spanX - 1; x++)
             {
                 for (uint z = 0; z < spanZ - 1; z++)
@@ -335,10 +446,13 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
-        public void Draw(int shaderProgram, int modelLoc)
+        public bool IsInFrustum(Frustum frustum)
         {
-            // PERFORMANCE OPTIMIZATION: Only upload the model matrix per chunk; 
-            // view and projection matrices are set once per frame in Terrain.Draw().
+            return frustum.IsSphereVisible(sphereCenter, sphereRadius);
+        }
+
+        public void Draw(int modelLoc)
+        {
             GL.UniformMatrix4(modelLoc, true, ref model);
 
             GL.BindVertexArray(vao);
