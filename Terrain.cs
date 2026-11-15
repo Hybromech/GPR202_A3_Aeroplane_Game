@@ -119,38 +119,63 @@ namespace GPR202_Assessment3
                 {
                     for (uint z = 0; z < length; z++)
                     {
-                        float r = image.Data[(x + width * z) * 4];
-                        float g = image.Data[(x + width * z) * 4] + 1;
-                        float b = image.Data[(x + width * z) * 4] + 2;
-                        float h = ((r + g + b) / 3) * 4f;
-                        rawHeightmap[x, z] = h;
+                        int idx = (int)((x + width * z) * 4);
+                        byte baseVal = image.Data[idx];
+
+                        float r = baseVal + 0;
+                        float g = baseVal + 1;
+                        float b = baseVal + 2;
+
+                        rawHeightmap[x, z] = ((r + g + b) / 3.0f) * 4f;
                     }
                 }
 
-                // Apply smoothing and store in global heightmap
-                int smooth = 4;
-                for (uint x = 0; x < width; x++)
+                // PERFORMANCE OPTIMIZATION: Separable 1D Sliding Window Smoothing (Horizontal + Vertical Passes)
+                // Fixed C# unsigned promotion bug by using signed int loop variables.
+                int radius = 4;
+                float[,] tempMap = new float[width, length];
+
+                // Pass 1: Horizontal Smoothing (Parallelized per row)
+                Parallel.For(0, (int)length, z =>
                 {
-                    for (uint z = 0; z < length; z++)
+                    for (int x = 0; x < width; x++)
                     {
-                        float h = rawHeightmap[x, z];
-                        if (x > smooth && x < width - 1 - smooth && z > smooth && z < length - 1 - smooth)
+                        float sum = 0f;
+                        int count = 0;
+
+                        for (int i = -radius; i <= radius; i++)
                         {
-                            float sum = 0;
-                            float e = 0;
-                            for (int i = -smooth; i < smooth; i++)
+                            long nx = x + i;
+                            if (nx >= 0 && nx < width)
                             {
-                                for (int j = -smooth; j < smooth; j++)
-                                {
-                                    sum += rawHeightmap[x + i, z + j];
-                                    e++;
-                                }
+                                sum += rawHeightmap[nx, z];
+                                count++;
                             }
-                            h = sum / e;
                         }
-                        heightmap[x, z] = h;
+                        tempMap[x, z] = sum / count;
                     }
-                }
+                });
+
+                // Pass 2: Vertical Smoothing (Parallelized per column)
+                Parallel.For(0, (int)width, x =>
+                {
+                    for (int z = 0; z < length; z++)
+                    {
+                        float sum = 0f;
+                        int count = 0;
+
+                        for (int j = -radius; j <= radius; j++)
+                        {
+                            long nz = z + j;
+                            if (nz >= 0 && nz < length)
+                            {
+                                sum += tempMap[x, nz];
+                                count++;
+                            }
+                        }
+                        heightmap[x, z] = sum / count;
+                    }
+                });
             }
 
             GL.DeleteTexture(heightmapHandle);
