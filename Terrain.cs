@@ -34,32 +34,63 @@ namespace GPR202_Assessment3
 
                 layout (location = 0) in vec3 aPosition;
                 layout (location = 1) in vec2 aTexCoord;
+                layout (location = 2) in vec3 aNormal;
 
                 uniform mat4 model;
                 uniform mat4 view;
                 uniform mat4 projection;
 
                 out vec2 texCoord;
+                out vec3 fragPos;
+                out vec3 normal;
 
                 void main()
                 {
                     texCoord = aTexCoord;
-                    gl_Position = vec4(aPosition, 1.0f) * model * view * projection;
+                    vec4 worldPosition = vec4(aPosition, 1.0f) * model;
+                    fragPos = worldPosition.xyz;
+                    normal = normalize(aNormal * mat3(model));
+                    gl_Position = worldPosition * view * projection;
                 }";
 
         string fragShaderCode =
-        @"
+            @"
                 #version 330 core
 
                 in vec2 texCoord;
+                in vec3 fragPos;
+                in vec3 normal;
+
                 out vec4 pixelColor;
 
+                struct DirLight {
+                    vec3 direction;
+                    vec3 ambient;
+                    vec3 diffuse;
+                    vec3 specular;
+                };
+
                 uniform sampler2D texture0;
+                uniform DirLight dirLight;
+                uniform vec3 viewPos;
 
                 void main()
                 {
-                    vec4 texColor = texture(texture0, texCoord);
-                    pixelColor = texColor;
+                    vec3 baseColor = texture(texture0, texCoord).rgb;
+                    vec3 norm = normalize(normal);
+                    vec3 lightDir = normalize(-dirLight.direction);
+                    vec3 viewDir = normalize(viewPos - fragPos);
+
+                    float diff = max(dot(norm, lightDir), 0.0);
+
+                    vec3 halfwayDir = normalize(lightDir + viewDir);
+                    float spec = pow(max(dot(norm, halfwayDir), 0.0), 32.0);
+
+                    vec3 ambient  = dirLight.ambient * baseColor;
+                    vec3 diffuse  = dirLight.diffuse * diff * baseColor;
+                    vec3 specular = dirLight.specular * spec * baseColor;
+
+                    pixelColor = vec4(ambient + diffuse + specular, 1.0);
                 }
             ";
 
@@ -72,11 +103,13 @@ namespace GPR202_Assessment3
             CreateChunks();
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj)
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos)
         {
             GL.UseProgram(terrainShaderProgram);
 
-            // PERFORMANCE OPTIMIZATION: Upload view and projection matrices ONCE per frame 
+            sunLight?.ApplyToShader(terrainShaderProgram, viewPos);
+
+            // Upload view and projection matrices ONCE per frame
             GL.UniformMatrix4(viewLocation, true, ref view);
             GL.UniformMatrix4(projectionLocation, true, ref proj);
 
@@ -100,6 +133,25 @@ namespace GPR202_Assessment3
         public static float GetHeightMapAt(int x, int z)
         {
             return heightmap[x, z];
+        }
+
+        public static Vector3 GetNormalAt(int x, int z)
+        {
+            int xL = Math.Max(x - 1, 0);
+            int xR = Math.Min(x + 1, (int)width - 1);
+            int zD = Math.Max(z - 1, 0);
+            int zU = Math.Min(z + 1, (int)length - 1);
+
+            float hL = heightmap[xL, z];
+            float hR = heightmap[xR, z];
+            float hD = heightmap[x, zD];
+            float hU = heightmap[x, zU];
+
+            float dx = (xR - xL) > 0 ? (xR - xL) : 1f;
+            float dz = (zU - zD) > 0 ? (zU - zD) : 1f;
+
+            Vector3 n = new Vector3((hL - hR) / dx, 2.0f, (hD - hU) / dz);
+            return Vector3.Normalize(n);
         }
 
         public static Vector3 WorldPositionFromHeightMap(int x, int z)
@@ -346,7 +398,7 @@ namespace GPR202_Assessment3
             uint spanX = (endX - startX) + 1;
             uint spanZ = (endZ - startZ) + 1;
 
-            vertexdata.Capacity = (int)(spanX * spanZ * 5);
+            vertexdata.Capacity = (int)(spanX * spanZ * 8);
             indices.Capacity = (int)((spanX - 1) * (spanZ - 1) * 6);
 
             float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
@@ -372,12 +424,18 @@ namespace GPR202_Assessment3
                     Vector3 worldPos = new Vector3(xpos, h + Terrain.OffsetY, zpos);
                     worldVertices.Add(worldPos);
 
+                    Vector3 n = Terrain.GetNormalAt((int)x, (int)z);
+
                     vertexdata.Add(xpos);
                     vertexdata.Add(h);
                     vertexdata.Add(zpos);
 
                     vertexdata.Add((1.0f / 2048f) * x);
                     vertexdata.Add((1.0f / 2048f) * z);
+
+                    vertexdata.Add(n.X);
+                    vertexdata.Add(n.Y);
+                    vertexdata.Add(n.Z);
                 }
             }
 
@@ -424,6 +482,8 @@ namespace GPR202_Assessment3
 
         private void SetupBuffers(List<float> vertexdata, List<uint> indices)
         {
+            int stride = 8 * sizeof(float);
+
             vao = GL.GenVertexArray();
             vbo = GL.GenBuffer();
             ebo = GL.GenBuffer();
@@ -435,9 +495,13 @@ namespace GPR202_Assessment3
             GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * _vbo.Length, _vbo, BufferUsageHint.StaticDraw);
 
             GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+
             GL.EnableVertexAttribArray(1);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+
+            GL.EnableVertexAttribArray(2);
+            GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
 
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
             uint[] _ebo = indices.ToArray();

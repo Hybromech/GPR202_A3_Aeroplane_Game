@@ -117,7 +117,7 @@ namespace GPR202_Assessment3
         private bool firstMove = true;
         private Vector2 lastPos;
         private float Sensitivity = -1f;
-        public float FlySpeed = 10.0f; //35.0f
+        public float FlySpeed = 35.0f; //35.0f
         public float TurnSpeed = 256.0f;
         public float LiftSpeed = 256.0f; // 256.0f
         public float Turn = 0f;

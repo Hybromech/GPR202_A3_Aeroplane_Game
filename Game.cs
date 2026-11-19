@@ -33,6 +33,8 @@ namespace GPR202_Assessment3
         Terrain terrain;
         Balloon balloon;
 
+        DirectionalLight sunLight;
+
         public const int balloons_total = 8;
         public int balloons_left = balloons_total;
         public List<BalloonState> m_balloons;
@@ -53,7 +55,7 @@ namespace GPR202_Assessment3
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1280, 720));
-            this.VSync = VSyncMode.On;
+            //this.VSync = VSyncMode.On;
             CursorState = CursorState.Grabbed;
         }
 
@@ -68,17 +70,23 @@ namespace GPR202_Assessment3
 
             GL.GetInteger(GetPName.Viewport, viewport);
             Console.WriteLine(viewport[0] + ", " + viewport[1] + ", " + viewport[2] + ", " + viewport[3]);
-
-            // Load Game Resources
-            cam = new Camera(Vector3.UnitZ * 3, (float)viewport[2], (float)viewport[3]);
+            
+        // Load Game Resources
+        cam = new Camera(Vector3.UnitZ * 3, (float)viewport[2], (float)viewport[3]);
             skybox = new Skybox();
             plane = new Plane();
             terrain = new Terrain();
             balloon = new Balloon();
+        // Setup Sunlight
+            sunLight = new DirectionalLight(
+            direction: new Vector3(-0.95f, -0.20f, -0.24f),  //-0.45f, -1.0f, -0.35f
+            ambient: new Vector3(0.25f, 0.25f, 0.28f),               // 0.25f, 0.25f, 0.28f
+            diffuse: new Vector3(0.95f, 0.92f, 0.85f),               // 0.95f, 0.92f, 0.85f
+            specular: new Vector3(0.5f, 0.5f, 0.5f)         // 0.2f, 0.2f, 0.2f
+);
 
             // Start a New Game
             SetupNewGame();
-
 
             base.OnLoad();
         }
@@ -125,9 +133,10 @@ namespace GPR202_Assessment3
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
                 //Console.WriteLine("Current_FPS " + currentFPS);
+                //Console.WriteLine("Plane Y " + plane.position.Y);
             }
 
-            //Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+            Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
 
             base.OnUpdateFrame(args);
 
@@ -155,7 +164,7 @@ namespace GPR202_Assessment3
                 // Constant-speed movement
                 plane.position -= plane.Right * plane.FlySpeed * FixedDeltaTime;
 
-                // Lift (if you still use it)
+                // Lift
                 plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], FixedDeltaTime);
 
                 // Balloons
@@ -217,11 +226,25 @@ namespace GPR202_Assessment3
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
             // Fixed camera position looking at the plane from a static vantage point
-            Vector3 fixedCamPos = new Vector3(0f, 150f, 300f);
+            //Vector3 fixedCamPos = new Vector3(0f, 150f, 300f);
             //Console.WriteLine("plane.GetPosition() " + plane.GetPosition());
-            Matrix4 view = Matrix4.LookAt(fixedCamPos, new Vector3(-1.1493115f, -0.690963f, 0.20048559f), new Vector3(0f, 1f, 0f));
+            //Matrix4 view = Matrix4.LookAt(fixedCamPos, new Vector3(-1.1493115f, -0.690963f, 0.20048559f), new Vector3(0f, 1f, 0f));
+
+            // update the uniform color
+            double timeValue = timer.Elapsed.TotalSeconds;
+
+            // Setup camera position and rotation
+            Vector3 cam_pos = new Vector3(0f, 0f, 0f);
+            Vector3 cam_dir = new Vector3(cam.Yaw, 20.0f, 0.0f);
+            float distance = 11.0f;
+            cam_pos.X = (float)(distance * -Math.Sin(cam_dir.X * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
+            cam_pos.Y = (float)(distance * -Math.Sin((cam_dir.Y) * (Math.PI / 180)));
+            cam_pos.Z = (float)(-distance * Math.Cos((cam_dir.X) * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
+            Matrix4 view = Matrix4.LookAt(plane.GetPosition() - cam_pos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
 
             Matrix4 proj = cam.GetProjectionMatrix();
+
+            Vector3 camWorldPos = plane.GetPosition() - cam_pos;
 
             // Draw Skybox
             GL.DepthFunc(DepthFunction.Lequal);
@@ -238,7 +261,7 @@ namespace GPR202_Assessment3
             }
 
             // Draw Terrain with Frustum Culling
-            terrain.Draw(view, proj);
+            terrain.Draw(view, proj, sunLight, camWorldPos);
 
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);
