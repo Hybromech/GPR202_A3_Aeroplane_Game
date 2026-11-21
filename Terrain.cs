@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Assimp;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using StbImageSharp;
@@ -14,7 +13,13 @@ namespace GPR202_Assessment3
         public static readonly uint width = 2048;
         public static readonly uint length = 2048;
         public static float OffsetY = -600;
+
+        private const float HeightScale = 4.0f;
+        private const uint CHUNK_SIZE = 128;
+
         private static float[,] heightmap;
+        private static float[] heightmapFlat;
+        private static Vector3[] normalsFlat;
 
         private List<TerrainChunk> chunks;
         private int textureHandle;
@@ -25,8 +30,6 @@ namespace GPR202_Assessment3
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
-        private const float HeightScale = 4.0f;
-        private const uint CHUNK_SIZE = 128;
 
         string vertexShaderCode =
             @"
@@ -132,31 +135,51 @@ namespace GPR202_Assessment3
 
         public static float GetHeightMapAt(int x, int z)
         {
-            return heightmap[x, z];
+            x = Math.Clamp(x, 0, (int)width - 1);
+            z = Math.Clamp(z, 0, (int)length - 1);
+            return heightmapFlat[z * (int)width + x];
         }
 
         public static Vector3 GetNormalAt(int x, int z)
         {
-            int xL = Math.Max(x - 1, 0);
-            int xR = Math.Min(x + 1, (int)width - 1);
-            int zD = Math.Max(z - 1, 0);
-            int zU = Math.Min(z + 1, (int)length - 1);
-
-            float hL = heightmap[xL, z];
-            float hR = heightmap[xR, z];
-            float hD = heightmap[x, zD];
-            float hU = heightmap[x, zU];
-
-            float dx = (xR - xL) > 0 ? (xR - xL) : 1f;
-            float dz = (zU - zD) > 0 ? (zU - zD) : 1f;
-
-            Vector3 n = new Vector3((hL - hR) / dx, 2.0f, (hD - hU) / dz);
-            return Vector3.Normalize(n);
+            x = Math.Clamp(x, 0, (int)width - 1);
+            z = Math.Clamp(z, 0, (int)length - 1);
+            return normalsFlat[z * (int)width + x];
         }
 
         public static Vector3 WorldPositionFromHeightMap(int x, int z)
         {
             return new Vector3(x - ((int)width / 2), OffsetY + GetHeightMapAt(x, z), z - ((int)length / 2));
+        }
+
+        public static float GetInterpolatedHeightAtWorld(float worldX, float worldZ)
+        {
+            int w = (int)width;
+            int l = (int)length;
+
+            float gx = Math.Clamp(worldX + (w * 0.5f), 0f, w - 1.0001f);
+            float gz = Math.Clamp(worldZ + (l * 0.5f), 0f, l - 1.0001f);
+
+            int x0 = (int)gx;
+            int z0 = (int)gz;
+            int x1 = x0 + 1;
+            int z1 = z0 + 1;
+
+            float tx = gx - x0;
+            float tz = gz - z0;
+
+            int row0 = z0 * w;
+            int row1 = z1 * w;
+
+            float h00 = heightmapFlat[row0 + x0];
+            float h10 = heightmapFlat[row0 + x1];
+            float h01 = heightmapFlat[row1 + x0];
+            float h11 = heightmapFlat[row1 + x1];
+
+            float hx0 = h00 + (h10 - h00) * tx;
+            float hx1 = h01 + (h11 - h01) * tx;
+
+            return OffsetY + (hx0 + (hx1 - hx0) * tz);
         }
 
         private void ImportHeightMap()
@@ -167,77 +190,154 @@ namespace GPR202_Assessment3
                 throw new FileNotFoundException("Heightmap not found at '" + hm_fullpath + "'");
             }
 
-            float[,] rawHeightmap = new float[width, length];
+            int w = (int)width;
+            int l = (int)length;
+            int totalPixels = w * l;
 
+            float[] rawHeightmap = new float[totalPixels];
+            float[] tempMap = new float[totalPixels];
+            heightmapFlat = new float[totalPixels];
+            normalsFlat = new Vector3[totalPixels];
+
+            byte[] rgbaData;
             using (var stream = File.OpenRead(hm_fullpath))
             {
                 ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-
-                for (uint z = 0; z < length; z++)
-                {
-                    for (uint x = 0; x < width; x++)
-                    {
-                        int idx = (int)((z * width + x) * 4);
-                        byte r = image.Data[idx];
-                        byte g = image.Data[idx + 1];
-                        byte b = image.Data[idx + 2];
-
-                        rawHeightmap[x, z] = ((r + g + b) / 3.0f) * HeightScale;
-                    }
-                }
+                rgbaData = image.Data;
             }
 
-            // Separable weighted kernel [1, 2, 4, 2, 1] / 10 for smoother slopes without flattening ridges
-            float[] kernel = { 1f, 2f, 4f, 2f, 1f };
-            const float kernelSum = 10f;
-            const int radius = 2;
-
-            float[,] tempMap = new float[width, length];
-
-            Parallel.For(0, (int)length, z =>
+            // 1. Parallel pixel-to-height extraction
+            Parallel.For(0, l, z =>
             {
-                for (int x = 0; x < width; x++)
+                int rowOffset = z * w;
+                int byteRowOffset = rowOffset * 4;
+
+                for (int x = 0; x < w; x++)
                 {
-                    float weightedSum = 0f;
-                    float weightTotal = 0f;
-
-                    for (int k = -radius; k <= radius; k++)
-                    {
-                        int nx = x + k;
-                        if (nx >= 0 && nx < width)
-                        {
-                            float w = kernel[k + radius];
-                            weightedSum += rawHeightmap[nx, z] * w;
-                            weightTotal += w;
-                        }
-                    }
-
-                    tempMap[x, z] = weightedSum / (weightTotal > 0f ? weightTotal : kernelSum);
+                    int bIdx = byteRowOffset + (x * 4);
+                    float avg = (rgbaData[bIdx] + rgbaData[bIdx + 1] + rgbaData[bIdx + 2]) * (1f / 3f);
+                    rawHeightmap[rowOffset + x] = avg * HeightScale;
                 }
             });
 
-            Parallel.For(0, (int)width, x =>
+            // Kernel weights [1, 2, 4, 2, 1] / 10f
+            const float w0 = 0.1f; // offset -2, +2
+            const float w1 = 0.2f; // offset -1, +1
+            const float w2 = 0.4f; // offset  0
+
+            // 2. Horizontal pass (fast interior without per-pixel bounds checks)
+            Parallel.For(0, l, z =>
             {
-                for (int z = 0; z < length; z++)
+                int row = z * w;
+
+                for (int x = 0; x < w; x++)
                 {
-                    float weightedSum = 0f;
-                    float weightTotal = 0f;
-
-                    for (int k = -radius; k <= radius; k++)
+                    if (x >= 2 && x < w - 2)
                     {
-                        int nz = z + k;
-                        if (nz >= 0 && nz < length)
-                        {
-                            float w = kernel[k + radius];
-                            weightedSum += tempMap[x, nz] * w;
-                            weightTotal += w;
-                        }
+                        tempMap[row + x] =
+                            (rawHeightmap[row + x - 2] * w0) +
+                            (rawHeightmap[row + x - 1] * w1) +
+                            (rawHeightmap[row + x] * w2) +
+                            (rawHeightmap[row + x + 1] * w1) +
+                            (rawHeightmap[row + x + 2] * w0);
                     }
-
-                    heightmap[x, z] = weightedSum / (weightTotal > 0f ? weightTotal : kernelSum);
+                    else
+                    {
+                        float sum = 0f;
+                        float weightSum = 0f;
+                        for (int k = -2; k <= 2; k++)
+                        {
+                            int nx = x + k;
+                            if ((uint)nx < (uint)w)
+                            {
+                                float kw = (k == 0) ? w2 : (Math.Abs(k) == 1 ? w1 : w0);
+                                sum += rawHeightmap[row + nx] * kw;
+                                weightSum += kw;
+                            }
+                        }
+                        tempMap[row + x] = sum / weightSum;
+                    }
                 }
             });
 
+            // 3. Vertical pass (fast interior rows 2..l-3)
+            Parallel.For(0, l, z =>
+            {
+                int row = z * w;
+
+                if (z >= 2 && z < l - 2)
+                {
+                    int rM2 = (z - 2) * w;
+                    int rM1 = (z - 1) * w;
+                    int rP1 = (z + 1) * w;
+                    int rP2 = (z + 2) * w;
+
+                    for (int x = 0; x < w; x++)
+                    {
+                        heightmapFlat[row + x] =
+                            (tempMap[rM2 + x] * w0) +
+                            (tempMap[rM1 + x] * w1) +
+                            (tempMap[row + x] * w2) +
+                            (tempMap[rP1 + x] * w1) +
+                            (tempMap[rP2 + x] * w0);
+                    }
+                }
+                else
+                {
+                    for (int x = 0; x < w; x++)
+                    {
+                        float sum = 0f;
+                        float weightSum = 0f;
+                        for (int k = -2; k <= 2; k++)
+                        {
+                            int nz = z + k;
+                            if ((uint)nz < (uint)l)
+                            {
+                                float kw = (k == 0) ? w2 : (Math.Abs(k) == 1 ? w1 : w0);
+                                sum += tempMap[nz * w + x] * kw;
+                                weightSum += kw;
+                            }
+                        }
+                        heightmapFlat[row + x] = sum / weightSum;
+                    }
+                }
+            });
+
+            // 4. Sync 2D heightmap array so TerrainChunk and legacy callers stay populated
+            Parallel.For(0, l, z =>
+            {
+                int row = z * w;
+                for (int x = 0; x < w; x++)
+                {
+                    heightmap[x, z] = heightmapFlat[row + x];
+                }
+            });
+
+            // 5. Precompute smooth vertex normals once in parallel
+            Parallel.For(0, l, z =>
+            {
+                int zD = z > 0 ? z - 1 : 0;
+                int zU = z < l - 1 ? z + 1 : l - 1;
+                float invDz = 1f / Math.Max(1, zU - zD);
+                int row = z * w;
+
+                for (int x = 0; x < w; x++)
+                {
+                    int xL = x > 0 ? x - 1 : 0;
+                    int xR = x < w - 1 ? x + 1 : w - 1;
+                    float invDx = 1f / Math.Max(1, xR - xL);
+
+                    float hL = heightmapFlat[row + xL];
+                    float hR = heightmapFlat[row + xR];
+                    float hD = heightmapFlat[zD * w + x];
+                    float hU = heightmapFlat[zU * w + x];
+
+                    Vector3 n = new Vector3((hL - hR) * invDx, 2.0f, (hD - hU) * invDz);
+                    normalsFlat[row + x] = Vector3.Normalize(n);
+                }
+            });
+
+            // Load diffuse texture
             textureHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
