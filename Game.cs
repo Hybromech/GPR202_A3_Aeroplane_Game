@@ -54,9 +54,10 @@ namespace GPR202_Assessment3
 
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
-            this.CenterWindow(new Vector2i(1280, 720));
+            this.CenterWindow(new Vector2i(1920, 1080));
             //this.VSync = VSyncMode.On;
             CursorState = CursorState.Grabbed;
+            this.WindowState = WindowState.Maximized;
         }
 
         protected override void OnLoad()
