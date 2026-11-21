@@ -25,7 +25,7 @@ namespace GPR202_Assessment3
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
-
+        private const float HeightScale = 4.0f;
         private const uint CHUNK_SIZE = 128;
 
         string vertexShaderCode =
@@ -161,13 +161,10 @@ namespace GPR202_Assessment3
 
         private void ImportHeightMap()
         {
-            int heightmapHandle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, heightmapHandle);
-
             string hm_fullpath = "Resource/Terrain/heightmap.png";
             if (!File.Exists(hm_fullpath))
             {
-                throw new FileNotFoundException("Texture not found at '" + hm_fullpath + "'");
+                throw new FileNotFoundException("Heightmap not found at '" + hm_fullpath + "'");
             }
 
             float[,] rawHeightmap = new float[width, length];
@@ -176,66 +173,70 @@ namespace GPR202_Assessment3
             {
                 ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
 
-                for (uint x = 0; x < width; x++)
+                for (uint z = 0; z < length; z++)
                 {
-                    for (uint z = 0; z < length; z++)
+                    for (uint x = 0; x < width; x++)
                     {
-                        int idx = (int)((x + width * z) * 4);
-                        byte baseVal = image.Data[idx];
+                        int idx = (int)((z * width + x) * 4);
+                        byte r = image.Data[idx];
+                        byte g = image.Data[idx + 1];
+                        byte b = image.Data[idx + 2];
 
-                        float r = baseVal + 0;
-                        float g = baseVal + 1;
-                        float b = baseVal + 2;
-
-                        rawHeightmap[x, z] = ((r + g + b) / 3.0f) * 4f;
+                        rawHeightmap[x, z] = ((r + g + b) / 3.0f) * HeightScale;
                     }
                 }
-
-                int radius = 4;
-                float[,] tempMap = new float[width, length];
-
-                Parallel.For(0, (int)length, z =>
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        float sum = 0f;
-                        int count = 0;
-
-                        for (int i = -radius; i <= radius; i++)
-                        {
-                            long nx = x + i;
-                            if (nx >= 0 && nx < width)
-                            {
-                                sum += rawHeightmap[nx, z];
-                                count++;
-                            }
-                        }
-                        tempMap[x, z] = sum / count;
-                    }
-                });
-
-                Parallel.For(0, (int)width, x =>
-                {
-                    for (int z = 0; z < length; z++)
-                    {
-                        float sum = 0f;
-                        int count = 0;
-
-                        for (int j = -radius; j <= radius; j++)
-                        {
-                            long nz = z + j;
-                            if (nz >= 0 && nz < length)
-                            {
-                                sum += tempMap[x, nz];
-                                count++;
-                            }
-                        }
-                        heightmap[x, z] = sum / count;
-                    }
-                });
             }
 
-            GL.DeleteTexture(heightmapHandle);
+            // Separable weighted kernel [1, 2, 4, 2, 1] / 10 for smoother slopes without flattening ridges
+            float[] kernel = { 1f, 2f, 4f, 2f, 1f };
+            const float kernelSum = 10f;
+            const int radius = 2;
+
+            float[,] tempMap = new float[width, length];
+
+            Parallel.For(0, (int)length, z =>
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float weightedSum = 0f;
+                    float weightTotal = 0f;
+
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int nx = x + k;
+                        if (nx >= 0 && nx < width)
+                        {
+                            float w = kernel[k + radius];
+                            weightedSum += rawHeightmap[nx, z] * w;
+                            weightTotal += w;
+                        }
+                    }
+
+                    tempMap[x, z] = weightedSum / (weightTotal > 0f ? weightTotal : kernelSum);
+                }
+            });
+
+            Parallel.For(0, (int)width, x =>
+            {
+                for (int z = 0; z < length; z++)
+                {
+                    float weightedSum = 0f;
+                    float weightTotal = 0f;
+
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int nz = z + k;
+                        if (nz >= 0 && nz < length)
+                        {
+                            float w = kernel[k + radius];
+                            weightedSum += tempMap[x, nz] * w;
+                            weightTotal += w;
+                        }
+                    }
+
+                    heightmap[x, z] = weightedSum / (weightTotal > 0f ? weightTotal : kernelSum);
+                }
+            });
 
             textureHandle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
@@ -246,10 +247,20 @@ namespace GPR202_Assessment3
             {
                 throw new FileNotFoundException("Texture not found at '" + fullpath + "'");
             }
+
             using (var stream = File.OpenRead(fullpath))
             {
                 ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+                GL.TexImage2D(
+                    TextureTarget.Texture2D,
+                    0,
+                    PixelInternalFormat.Rgba,
+                    image.Width,
+                    image.Height,
+                    0,
+                    PixelFormat.Rgba,
+                    PixelType.UnsignedByte,
+                    image.Data);
             }
 
             GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
