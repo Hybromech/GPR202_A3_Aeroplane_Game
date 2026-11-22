@@ -95,17 +95,21 @@ namespace GPR202_Assessment3
                         return 0.0;
                     }
 
-                    float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.001);
+                    float bias = max(0.0012 * (1.0 - dot(norm, lightDir)), 0.00025);
                     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-                    float shadow = 0.0;
 
-                    for (int x = -1; x <= 1; x++)
+                    vec2 offsets[9] = vec2[](
+                        vec2(-1.0, -1.0), vec2( 0.0, -1.0), vec2( 1.0, -1.0),
+                        vec2(-1.0,  0.0), vec2( 0.0,  0.0), vec2( 1.0,  0.0),
+                        vec2(-1.0,  1.0), vec2( 0.0,  1.0), vec2( 1.0,  1.0)
+                    );
+
+                    float shadow = 0.0;
+                    for (int i = 0; i < 9; i++)
                     {
-                        for (int y = -1; y <= 1; y++)
-                        {
-                            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-                            shadow += (projCoords.z - bias > pcfDepth) ? 1.0 : 0.0;
-                        }
+                        float pcfDepth = texture(shadowMap, projCoords.xy + offsets[i] * texelSize).r;
+                        float diff = (projCoords.z - bias) - pcfDepth;
+                        shadow += smoothstep(0.0, 0.0008, diff);
                     }
 
                     return shadow / 9.0;

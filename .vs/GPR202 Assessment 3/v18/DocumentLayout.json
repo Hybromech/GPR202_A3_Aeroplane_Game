@@ -1,12 +1,37 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|v:\\andrew\\university\\bachelor of software engineering\\3d graphics programming\\a3\\gpr202_a3_aeroplane_game\\game.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|solutionrelative:game.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Game.cs",
+              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Game.cs",
+              "RelativeDocumentMoniker": "Game.cs",
+              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Game.cs",
+              "RelativeToolTip": "Game.cs",
+              "ViewState": "AgIAACQAAAAAAAAAAAAgwC4AAAAzAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-22T08:18:17.611Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -43,6 +43,7 @@ namespace GPR202_Assessment3
         {
             this.CenterWindow(new Vector2i(1920, 1080));
             this.VSync = VSyncMode.Off;
+            this.WindowState = WindowState.Maximized;
             this.CursorState = CursorState.Grabbed;
         }
 
@@ -71,12 +72,12 @@ namespace GPR202_Assessment3
 
             // Directional Light & Shadow Map
             sunLight = new DirectionalLight(
-                direction: new Vector3(-0.95f, -0.20f, -0.2f),
+                direction: new Vector3(-0.45f, -1.0f, -0.35f),
                 ambient: new Vector3(0.25f, 0.25f, 0.28f),
                 diffuse: new Vector3(0.95f, 0.92f, 0.85f),
                 specular: new Vector3(0.25f, 0.25f, 0.25f)
             );
-            shadowMap = new ShadowMap(2048, 2048);
+            shadowMap = new ShadowMap(4096, 4096);
 
             // Start a New Game
             SetupNewGame();
@@ -202,7 +203,7 @@ namespace GPR202_Assessment3
             Matrix4 proj = cam.GetProjectionMatrix();
 
             // --- PASS 1: Shadow Depth Pass (centered around plane) ---
-            shadowMap.BeginPass(sunLight, plane.GetPosition(), halfExtent: 500f);
+            shadowMap.BeginPass(sunLight, plane.GetPosition(), halfExtent: 400f);
 
             terrain.DrawDepth(shadowMap);
             plane.DrawDepth(shadowMap);

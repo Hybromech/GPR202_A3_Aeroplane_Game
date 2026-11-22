@@ -17,7 +17,7 @@ namespace GPR202_Assessment3
         private int _lightSpaceLoc;
         private bool _disposed;
 
-        public ShadowMap(int width = 2048, int height = 2048)
+        public ShadowMap(int width = 4096, int height = 4096)
         {
             Width = width;
             Height = height;
@@ -132,7 +132,7 @@ namespace GPR202_Assessment3
         public void BeginPass(
             DirectionalLight sun,
             Vector3 targetCenter,
-            float halfExtent = 350f,
+            float halfExtent = 400f,
             float nearDist = -900f,
             float farDist = 1800f)
         {
@@ -172,7 +172,7 @@ namespace GPR202_Assessment3
             GL.Clear(ClearBufferMask.DepthBufferBit);
 
             GL.Enable(EnableCap.PolygonOffsetFill);
-            GL.PolygonOffset(1.0f, 2.0f);
+            GL.PolygonOffset(0.75f, 1.0f);
 
             GL.UseProgram(DepthShaderProgram);
             if (_lightSpaceLoc != -1)
