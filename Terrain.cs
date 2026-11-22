@@ -25,6 +25,7 @@ namespace GPR202_Assessment3
         private int textureHandle;
         private int terrainShaderProgram;
         private Frustum frustum;
+        private readonly Frustum shadowFrustum = new Frustum();
 
         // Cached uniform locations
         private int modelLocation;
@@ -124,6 +125,39 @@ namespace GPR202_Assessment3
                     return mix(bottom, top, weight.y);
                 }
 
+                float UnitSpreadShadow(vec2 uv, float receiverDepth)
+                {
+                    // The 25 bilinear taps overlap on a 6x6 texel footprint.
+                    // Convolve the original kernel with the bilinear weights so
+                    // each depth comparison is evaluated only once.
+                    vec2 position = uv * vec2(textureSize(shadowMap, 0)) - vec2(0.5);
+                    ivec2 first = ivec2(floor(position)) - ivec2(2);
+                    vec2 fraction = fract(position);
+                    float kernel[5] = float[](0.5, 1.0, 1.0, 1.0, 0.5);
+                    float weightsX[6];
+                    float weightsY[6];
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float current = 0.0;
+                        float previous = 0.0;
+                        if (i < 5) current = kernel[i];
+                        if (i > 0) previous = kernel[i - 1];
+                        weightsX[i] = mix(current, previous, fraction.x);
+                        weightsY[i] = mix(current, previous, fraction.y);
+                    }
+
+                    float shadow = 0.0;
+                    for (int y = 0; y < 6; y++)
+                    {
+                        for (int x = 0; x < 6; x++)
+                        {
+                            shadow += weightsX[x] * weightsY[y] *
+                                CompareShadowTexel(first + ivec2(x, y), receiverDepth);
+                        }
+                    }
+                    return shadow / 16.0;
+                }
+
                 float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
                     vec3 projCoords = lsPos.xyz / lsPos.w;
@@ -135,6 +169,11 @@ namespace GPR202_Assessment3
                     }
 
                     float bias = max(uSlopeBiasScale * (1.0 - dot(norm, lightDir)), uMinBias);
+                    // Exact unit spacing is required for the shared 6x6 footprint.
+                    // Keep the general filter for all other configurable spreads.
+                    if (uPcfSpread == 1.0)
+                        return UnitSpreadShadow(projCoords.xy, projCoords.z - bias) * uShadowStrength;
+
                     vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
                     // A wider kernel gives the ground shadow a gentler spatial falloff.
@@ -195,9 +234,14 @@ namespace GPR202_Assessment3
                 return;
             }
 
+            // Cull against the light, not the camera: off-screen chunks can cast shadows.
+            shadowFrustum.Update(shadowMap.LightSpaceMatrix);
             for (int i = 0; i < chunks.Count; i++)
             {
-                chunks[i].DrawDepth(shadowMap);
+                if (chunks[i].IsInFrustum(shadowFrustum))
+                {
+                    chunks[i].DrawDepth(shadowMap);
+                }
             }
         }
 
