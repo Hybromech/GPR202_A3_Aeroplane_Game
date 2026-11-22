@@ -124,6 +124,7 @@ namespace GPR202_Assessment3
                 uniform sampler2D texture0;
                 uniform sampler2D shadowMap;
                 uniform DirLight dirLight;
+                uniform vec3 ambientLight;
                 uniform vec3 viewPos;
 
                 uniform float uBias;
@@ -196,10 +197,11 @@ namespace GPR202_Assessment3
                     float shadow = ComputeShadow(lightSpacePos, lightDir);
                     float strength = uShadowStrength;
 
-                    vec3 ambient = dirLight.ambient * baseColor;
-                    vec3 litColor = baseColor * (1.0 - shadow * strength);
+                    vec3 ambient = ambientLight * baseColor;
+                    // Blend from full texture brightness to ambient fill in shadow.
+                    vec3 litColor = mix(baseColor, ambient, shadow * strength);
 
-                    pixelColor = vec4(max(ambient, litColor), texColor.a);
+                    pixelColor = vec4(litColor, texColor.a);
                 }
             ";
 
@@ -282,13 +284,14 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight = null, Vector3 viewPos = default, ShadowMap shadowMap = null)
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, ShadowMap shadowMap = null)
         {
             model = ComputeModelMatrix();
 
             GL.UseProgram(planeShaderProgram);
 
             sunLight?.ApplyToShader(planeShaderProgram, viewPos);
+            ambientLight.ApplyToShader(planeShaderProgram);
 
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
             GL.UniformMatrix4(modelLocation, true, ref model);

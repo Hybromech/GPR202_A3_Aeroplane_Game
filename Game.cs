@@ -21,6 +21,7 @@ namespace GPR202_Assessment3
         Terrain terrain;
         Balloon balloon;
         DirectionalLight sunLight;
+        AmbientLight ambientLight;
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
 
@@ -71,14 +72,16 @@ namespace GPR202_Assessment3
             float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
             plane.position.Y = groundY + 40f;
 
+            shadowSettings = new ShadowSettings();
+            ambientLight = new AmbientLight(shadowSettings);
+
             // Directional Light & Shadow Settings / Shadow Map
             sunLight = new DirectionalLight(
                 direction: new Vector3(-0.92f, -0.24f, -0.30f),
-                ambient: new Vector3(0.25f, 0.25f, 0.28f),
+                ambient: Vector3.Zero,
                 diffuse: new Vector3(0.95f, 0.92f, 0.85f),
                 specular: new Vector3(0.25f, 0.25f, 0.25f)
             );
-            shadowSettings = new ShadowSettings();
             shadowMap = new ShadowMap(shadowSettings);
 
             // Start a New Game
@@ -224,7 +227,7 @@ namespace GPR202_Assessment3
             GL.DepthFunc(DepthFunction.Less);
 
             // Draw Plane with Directional Lighting & Shadows
-            plane.Draw(view, proj, sunLight, camWorldPos, shadowMap);
+            plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
 
             // Draw Balloons
             for (int i = 0; i < m_balloons.Count; i++)
@@ -233,7 +236,7 @@ namespace GPR202_Assessment3
             }
 
             // Draw Terrain with Directional Lighting & Shadows
-            terrain.Draw(view, proj, sunLight, camWorldPos, shadowMap);
+            terrain.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
 
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);

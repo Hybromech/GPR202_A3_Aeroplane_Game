@@ -89,6 +89,7 @@ namespace GPR202_Assessment3
                 uniform sampler2D texture0;
                 uniform sampler2D shadowMap;
                 uniform DirLight dirLight;
+                uniform vec3 ambientLight;
                 uniform vec3 viewPos;
 
                 uniform float uSlopeBiasScale;
@@ -210,7 +211,7 @@ namespace GPR202_Assessment3
 
                     float shadow = ComputeShadow(lightSpacePos, norm, lightDir);
 
-                    vec3 ambient  = dirLight.ambient * baseColor;
+                    vec3 ambient  = ambientLight * baseColor;
                     vec3 diffuse  = dirLight.diffuse * diff * baseColor * (1.0 - shadow);
                     vec3 specular = dirLight.specular * spec * baseColor * (1.0 - shadow);
 
@@ -245,11 +246,12 @@ namespace GPR202_Assessment3
             }
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, ShadowMap shadowMap = null)
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, ShadowMap shadowMap = null)
         {
             GL.UseProgram(terrainShaderProgram);
 
             sunLight?.ApplyToShader(terrainShaderProgram, viewPos);
+            ambientLight.ApplyToShader(terrainShaderProgram);
 
             // Upload view and projection matrices ONCE per frame
             GL.UniformMatrix4(viewLocation, true, ref view);
