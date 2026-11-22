@@ -96,12 +96,40 @@ namespace GPR202_Assessment3
                 uniform float uSoftEdgeRange;
                 uniform float uShadowStrength;
 
+                float CompareShadowTexel(ivec2 texel, float receiverDepth)
+                {
+                    ivec2 size = textureSize(shadowMap, 0);
+                    // texelFetch does not apply ClampToBorder; outside the map is lit.
+                    if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, size)))
+                        return 0.0;
+
+                    float depth = texelFetch(shadowMap, texel, 0).r;
+                    return smoothstep(0.0, max(uSoftEdgeRange, 0.00001), receiverDepth - depth);
+                }
+
+                float FilteredShadow(vec2 uv, float receiverDepth)
+                {
+                    // Interpolate comparisons, never depths, to avoid false occluders.
+                    // Subtract half a texel so integer coordinates are texel centers.
+                    vec2 position = uv * vec2(textureSize(shadowMap, 0)) - vec2(0.5);
+                    ivec2 base = ivec2(floor(position));
+                    vec2 weight = fract(position);
+
+                    float bottom = mix(
+                        CompareShadowTexel(base, receiverDepth),
+                        CompareShadowTexel(base + ivec2(1, 0), receiverDepth), weight.x);
+                    float top = mix(
+                        CompareShadowTexel(base + ivec2(0, 1), receiverDepth),
+                        CompareShadowTexel(base + ivec2(1, 1), receiverDepth), weight.x);
+                    return mix(bottom, top, weight.y);
+                }
+
                 float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
                     vec3 projCoords = lsPos.xyz / lsPos.w;
                     projCoords = projCoords * 0.5 + 0.5;
 
-                    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+                    if (projCoords.z < 0.0 || projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
                     {
                         return 0.0;
                     }
@@ -109,21 +137,24 @@ namespace GPR202_Assessment3
                     float bias = max(uSlopeBiasScale * (1.0 - dot(norm, lightDir)), uMinBias);
                     vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
-                    vec2 offsets[9] = vec2[](
-                        vec2(-1.0, -1.0), vec2( 0.0, -1.0), vec2( 1.0, -1.0),
-                        vec2(-1.0,  0.0), vec2( 0.0,  0.0), vec2( 1.0,  0.0),
-                        vec2(-1.0,  1.0), vec2( 0.0,  1.0), vec2( 1.0,  1.0)
-                    );
-
+                    // A wider kernel gives the ground shadow a gentler spatial falloff.
+                    // Half-weight outer taps taper the edge; normalization keeps the
+                    // fully shadowed interior at the configured strength.
                     float shadow = 0.0;
-                    for (int i = 0; i < 9; i++)
+                    for (int y = -2; y <= 2; y++)
                     {
-                        float pcfDepth = texture(shadowMap, projCoords.xy + offsets[i] * texelSize).r;
-                        float diff = (projCoords.z - bias) - pcfDepth;
-                        shadow += smoothstep(0.0, max(uSoftEdgeRange, 0.00001), diff);
+                        float wy = abs(y) == 2 ? 0.5 : 1.0;
+                        for (int x = -2; x <= 2; x++)
+                        {
+                            float wx = abs(x) == 2 ? 0.5 : 1.0;
+                            shadow += wx * wy * FilteredShadow(
+                                projCoords.xy + vec2(x, y) * texelSize,
+                                projCoords.z - bias);
+                        }
                     }
 
-                    return (shadow / 9.0) * uShadowStrength;
+                    // Each axis sums to 4: total kernel weight is 16.
+                    return (shadow / 16.0) * uShadowStrength;
                 }
 
                 void main()

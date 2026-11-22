@@ -43,7 +43,7 @@ namespace GPR202_Assessment3
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1920, 1080));
-            this.VSync = VSyncMode.On;
+            this.VSync = VSyncMode.Off;
             this.WindowState = WindowState.Maximized;
             this.CursorState = CursorState.Grabbed;
         }
@@ -73,7 +73,7 @@ namespace GPR202_Assessment3
 
             // Directional Light & Shadow Settings / Shadow Map
             sunLight = new DirectionalLight(
-                direction: new Vector3(-0.45f, -1.0f, -0.35f),
+                direction: new Vector3(-0.92f, -0.24f, -0.30f),
                 ambient: new Vector3(0.25f, 0.25f, 0.28f),
                 diffuse: new Vector3(0.95f, 0.92f, 0.85f),
                 specular: new Vector3(0.25f, 0.25f, 0.25f)

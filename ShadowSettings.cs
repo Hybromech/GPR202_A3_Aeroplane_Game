@@ -1,7 +1,20 @@
+using OpenTK.Mathematics;
+
 namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        // Directional light directions for different times of day
+        public Vector3 DawnDirection { get; set; } = new Vector3(-0.65f, -0.55f, 0.45f);
+        public Vector3 SunriseDirection { get; set; } = new Vector3(-0.85f, -0.40f, 0.25f);
+        public Vector3 MorningDirection { get; set; } = new Vector3(-0.95f, -0.30f, -0.10f);
+        public Vector3 MiddayDirection { get; set; } = new Vector3(-0.20f, -0.95f, -0.15f);
+        public Vector3 AfternoonDirection { get; set; } = new Vector3(0.55f, -0.65f, -0.35f);
+        public Vector3 SunsetDirection { get; set; } = new Vector3(0.85f, -0.40f, -0.25f);
+        public Vector3 DuskDirection { get; set; } = new Vector3(0.65f, -0.55f, 0.45f);
+        public Vector3 NightDirection { get; set; } = new Vector3(0.25f, -0.85f, 0.55f);
+        public Vector3 MidnightDirection { get; set; } = new Vector3(0.10f, -0.98f, 0.10f);
+
         // Shadow map resolution and coverage
         public int Resolution { get; set; } = 4096;
         public float HalfExtent { get; set; } = 400f;
