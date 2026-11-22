@@ -132,7 +132,7 @@ namespace GPR202_Assessment3
                         return 0.0;
                     }
 
-                    float bias = 0.0015;
+                    float bias = 0.0004;
                     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
                     float shadow = 0.0;
 
@@ -157,7 +157,7 @@ namespace GPR202_Assessment3
                     float shadow = ComputeShadow(lightSpacePos, lightDir);
 
                     vec3 ambient = dirLight.ambient * baseColor;
-                    vec3 litColor = baseColor * (1.0 - shadow * 0.55);
+                    vec3 litColor = baseColor * (1.0 - shadow * 0.75);
 
                     pixelColor = vec4(max(ambient, litColor), texColor.a);
                 }

@@ -172,7 +172,7 @@ namespace GPR202_Assessment3
             GL.Clear(ClearBufferMask.DepthBufferBit);
 
             GL.Enable(EnableCap.PolygonOffsetFill);
-            GL.PolygonOffset(2.0f, 4.0f);
+            GL.PolygonOffset(1.0f, 2.0f);
 
             GL.UseProgram(DepthShaderProgram);
             if (_lightSpaceLoc != -1)
