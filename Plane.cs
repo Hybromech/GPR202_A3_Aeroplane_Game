@@ -302,7 +302,7 @@ namespace GPR202_Assessment3
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
             StbImage.stbi_set_flip_vertically_on_load(1);
-            string fullpath = "Resource/Model/BodyTexture.jpeg";
+            string fullpath = "Resource/Model/BodyTexture.png";
             if (!File.Exists(fullpath))
             {
                 throw new FileNotFoundException("Texture not found at '" + fullpath + "'");

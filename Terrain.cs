@@ -14,7 +14,7 @@ namespace GPR202_Assessment3
         public static readonly uint length = 2048;
         public static float OffsetY = -600;
 
-        private const float HeightScale = 4.0f;
+        private const float HeightScale = 4.0f; //4.0f
         private const uint CHUNK_SIZE = 128;
 
         private static float[,] heightmap;

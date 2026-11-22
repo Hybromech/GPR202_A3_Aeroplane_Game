@@ -78,14 +78,16 @@ namespace GPR202_Assessment3
             plane = new Plane();
             terrain = new Terrain();
             balloon = new Balloon();
-        // Setup Sunlight
+
+            float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
+            plane.position.Y = groundY + 40f; // 40 units above the ground at spawn
+                                              // Setup Sunlight
             sunLight = new DirectionalLight(
             direction: new Vector3(-0.95f, -0.20f, -0.24f),  //-0.45f, -1.0f, -0.35f
             ambient: new Vector3(0.25f, 0.25f, 0.28f),               // 0.25f, 0.25f, 0.28f
             diffuse: new Vector3(0.95f, 0.92f, 0.85f),               // 0.95f, 0.92f, 0.85f
             specular: new Vector3(0.5f, 0.5f, 0.5f)         // 0.2f, 0.2f, 0.2f
 );
-
             // Start a New Game
             SetupNewGame();
 

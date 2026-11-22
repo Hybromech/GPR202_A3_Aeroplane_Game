@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("GPR202_A3")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1b3ac148d4141d36e32fcaa2dae2c7198f7fe1cd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+51d795c6899552bc5f400a7ae2a469dd3d4e1911")]
 [assembly: System.Reflection.AssemblyProductAttribute("GPR202_A3")]
 [assembly: System.Reflection.AssemblyTitleAttribute("GPR202_A3")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

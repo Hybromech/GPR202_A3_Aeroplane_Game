@@ -50,3 +50,4 @@ V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\obj\Release\net8.0\GPR202_A3.pdb
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\obj\Release\net8.0\GPR202_A3.genruntimeconfig.cache
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\obj\Release\net8.0\ref\GPR202_A3.dll
+V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\BodyTexture.png
