@@ -137,20 +137,24 @@ namespace GPR202_Assessment3
                     float bias = max(uSlopeBiasScale * (1.0 - dot(norm, lightDir)), uMinBias);
                     vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
-                    vec2 offsets[9] = vec2[](
-                        vec2(-1.0, -1.0), vec2( 0.0, -1.0), vec2( 1.0, -1.0),
-                        vec2(-1.0,  0.0), vec2( 0.0,  0.0), vec2( 1.0,  0.0),
-                        vec2(-1.0,  1.0), vec2( 0.0,  1.0), vec2( 1.0,  1.0)
-                    );
-
+                    // A wider kernel gives the ground shadow a gentler spatial falloff.
+                    // Half-weight outer taps taper the edge; normalization keeps the
+                    // fully shadowed interior at the configured strength.
                     float shadow = 0.0;
-                    for (int i = 0; i < 9; i++)
+                    for (int y = -2; y <= 2; y++)
                     {
-                        shadow += FilteredShadow(projCoords.xy + offsets[i] * texelSize,
-                            projCoords.z - bias);
+                        float wy = abs(y) == 2 ? 0.5 : 1.0;
+                        for (int x = -2; x <= 2; x++)
+                        {
+                            float wx = abs(x) == 2 ? 0.5 : 1.0;
+                            shadow += wx * wy * FilteredShadow(
+                                projCoords.xy + vec2(x, y) * texelSize,
+                                projCoords.z - bias);
+                        }
                     }
 
-                    return (shadow / 9.0) * uShadowStrength;
+                    // Each axis sums to 4: total kernel weight is 16.
+                    return (shadow / 16.0) * uShadowStrength;
                 }
 
                 void main()
