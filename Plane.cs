@@ -131,12 +131,40 @@ namespace GPR202_Assessment3
                 uniform float uSoftEdgeRange;
                 uniform float uShadowStrength;
 
+                float CompareShadowTexel(ivec2 texel, float receiverDepth)
+                {
+                    ivec2 size = textureSize(shadowMap, 0);
+                    // texelFetch does not apply ClampToBorder; outside the map is lit.
+                    if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, size)))
+                        return 0.0;
+
+                    float depth = texelFetch(shadowMap, texel, 0).r;
+                    return smoothstep(0.0, max(uSoftEdgeRange, 0.00001), receiverDepth - depth);
+                }
+
+                float FilteredShadow(vec2 uv, float receiverDepth)
+                {
+                    // Interpolate comparisons, never depths, to avoid false occluders.
+                    // Subtract half a texel so integer coordinates are texel centers.
+                    vec2 position = uv * vec2(textureSize(shadowMap, 0)) - vec2(0.5);
+                    ivec2 base = ivec2(floor(position));
+                    vec2 weight = fract(position);
+
+                    float bottom = mix(
+                        CompareShadowTexel(base, receiverDepth),
+                        CompareShadowTexel(base + ivec2(1, 0), receiverDepth), weight.x);
+                    float top = mix(
+                        CompareShadowTexel(base + ivec2(0, 1), receiverDepth),
+                        CompareShadowTexel(base + ivec2(1, 1), receiverDepth), weight.x);
+                    return mix(bottom, top, weight.y);
+                }
+
                 float ComputeShadow(vec4 lsPos, vec3 lightDir)
                 {
                     vec3 projCoords = lsPos.xyz / lsPos.w;
                     projCoords = projCoords * 0.5 + 0.5;
 
-                    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+                    if (projCoords.z < 0.0 || projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
                     {
                         return 0.0;
                     }
@@ -152,9 +180,8 @@ namespace GPR202_Assessment3
                     float shadow = 0.0;
                     for (int i = 0; i < 9; i++)
                     {
-                        float pcfDepth = texture(shadowMap, projCoords.xy + offsets[i] * texelSize).r;
-                        float diff = (projCoords.z - uBias) - pcfDepth;
-                        shadow += smoothstep(0.0, max(uSoftEdgeRange, 0.00001), diff);
+                        shadow += FilteredShadow(projCoords.xy + offsets[i] * texelSize,
+                            projCoords.z - uBias);
                     }
 
                     return shadow / 9.0;
