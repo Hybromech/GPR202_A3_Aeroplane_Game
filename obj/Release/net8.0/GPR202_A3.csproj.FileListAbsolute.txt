@@ -1,7 +1,6 @@
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\balloon.mtl
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\balloon.obj
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\balloon.png
-V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\BodyTexture.jpeg
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\plane.mtl
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Model\plane.obj
 V:\Andrew\University\Bachelor of Software Engineering\3D Graphics Programming\A3\GPR202_A3_Aeroplane_Game\bin\Release\net8.0\Resource\Skybox\back.jpg

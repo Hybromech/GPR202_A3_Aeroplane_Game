@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -30,6 +30,9 @@ namespace GPR202_Assessment3
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
+        private int lightSpaceLocation;
+        private int texture0Location;
+        private int shadowMapLocation;
 
         string vertexShaderCode =
             @"
@@ -42,10 +45,12 @@ namespace GPR202_Assessment3
                 uniform mat4 model;
                 uniform mat4 view;
                 uniform mat4 projection;
+                uniform mat4 lightSpaceMatrix;
 
                 out vec2 texCoord;
                 out vec3 fragPos;
                 out vec3 normal;
+                out vec4 lightSpacePos;
 
                 void main()
                 {
@@ -53,6 +58,7 @@ namespace GPR202_Assessment3
                     vec4 worldPosition = vec4(aPosition, 1.0f) * model;
                     fragPos = worldPosition.xyz;
                     normal = normalize(aNormal * mat3(model));
+                    lightSpacePos = worldPosition * lightSpaceMatrix;
                     gl_Position = worldPosition * view * projection;
                 }";
 
@@ -63,6 +69,7 @@ namespace GPR202_Assessment3
                 in vec2 texCoord;
                 in vec3 fragPos;
                 in vec3 normal;
+                in vec4 lightSpacePos;
 
                 out vec4 pixelColor;
 
@@ -74,8 +81,35 @@ namespace GPR202_Assessment3
                 };
 
                 uniform sampler2D texture0;
+                uniform sampler2D shadowMap;
                 uniform DirLight dirLight;
                 uniform vec3 viewPos;
+
+                float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
+                {
+                    vec3 projCoords = lsPos.xyz / lsPos.w;
+                    projCoords = projCoords * 0.5 + 0.5;
+
+                    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+                    {
+                        return 0.0;
+                    }
+
+                    float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.001);
+                    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+                    float shadow = 0.0;
+
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        for (int y = -1; y <= 1; y++)
+                        {
+                            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+                            shadow += (projCoords.z - bias > pcfDepth) ? 1.0 : 0.0;
+                        }
+                    }
+
+                    return shadow / 9.0;
+                }
 
                 void main()
                 {
@@ -89,9 +123,11 @@ namespace GPR202_Assessment3
                     vec3 halfwayDir = normalize(lightDir + viewDir);
                     float spec = pow(max(dot(norm, halfwayDir), 0.0), 32.0);
 
+                    float shadow = ComputeShadow(lightSpacePos, norm, lightDir);
+
                     vec3 ambient  = dirLight.ambient * baseColor;
-                    vec3 diffuse  = dirLight.diffuse * diff * baseColor;
-                    vec3 specular = dirLight.specular * spec * baseColor;
+                    vec3 diffuse  = dirLight.diffuse * diff * baseColor * (1.0 - shadow);
+                    vec3 specular = dirLight.specular * spec * baseColor * (1.0 - shadow);
 
                     pixelColor = vec4(ambient + diffuse + specular, 1.0);
                 }
@@ -106,7 +142,20 @@ namespace GPR202_Assessment3
             CreateChunks();
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos)
+        public void DrawDepth(ShadowMap shadowMap)
+        {
+            if (shadowMap == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                chunks[i].DrawDepth(shadowMap);
+            }
+        }
+
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, ShadowMap shadowMap = null)
         {
             GL.UseProgram(terrainShaderProgram);
 
@@ -116,8 +165,29 @@ namespace GPR202_Assessment3
             GL.UniformMatrix4(viewLocation, true, ref view);
             GL.UniformMatrix4(projectionLocation, true, ref proj);
 
+            if (texture0Location != -1)
+            {
+                GL.Uniform1(texture0Location, 0);
+            }
+
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
+
+            if (shadowMap != null)
+            {
+                if (lightSpaceLocation != -1)
+                {
+                    Matrix4 lsMatrix = shadowMap.LightSpaceMatrix;
+                    GL.UniformMatrix4(lightSpaceLocation, true, ref lsMatrix);
+                }
+
+                if (shadowMapLocation != -1)
+                {
+                    GL.Uniform1(shadowMapLocation, 1);
+                }
+
+                shadowMap.BindDepthMap(TextureUnit.Texture1);
+            }
 
             // Update camera frustum planes from standard View-Projection matrix
             Matrix4 viewProj = view * proj;
@@ -394,6 +464,9 @@ namespace GPR202_Assessment3
             modelLocation = GL.GetUniformLocation(terrainShaderProgram, "model");
             viewLocation = GL.GetUniformLocation(terrainShaderProgram, "view");
             projectionLocation = GL.GetUniformLocation(terrainShaderProgram, "projection");
+            lightSpaceLocation = GL.GetUniformLocation(terrainShaderProgram, "lightSpaceMatrix");
+            texture0Location = GL.GetUniformLocation(terrainShaderProgram, "texture0");
+            shadowMapLocation = GL.GetUniformLocation(terrainShaderProgram, "shadowMap");
         }
 
         private void CreateChunks()
@@ -626,9 +699,20 @@ namespace GPR202_Assessment3
             return frustum.IsSphereVisible(sphereCenter, sphereRadius);
         }
 
+        public void DrawDepth(ShadowMap shadowMap)
+        {
+            Matrix4 chunkModel = model;
+            shadowMap.ApplyDepthModel(chunkModel);
+
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
+            GL.BindVertexArray(0);
+        }
+
         public void Draw(int modelLoc)
         {
-            GL.UniformMatrix4(modelLoc, true, ref model);
+            Matrix4 chunkModel = model;
+            GL.UniformMatrix4(modelLoc, true, ref chunkModel);
 
             GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);

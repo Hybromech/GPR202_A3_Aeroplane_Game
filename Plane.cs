@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -65,30 +66,38 @@ namespace GPR202_Assessment3
         public Vector3 Direction => (position + Front);
 
         private int planeShaderProgram;
-        
+
         // PERFORMANCE OPTIMIZATION: Cached uniform locations.
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
+        private int lightSpaceLocation;
+        private int texture0Location;
+        private int shadowMapLocation;
 
         string vertexShaderCode =
             @"
                 #version 330 core
 
-                layout (location  =0) in vec3 aPosition;
-                layout(location = 1) in vec2 aTexCoord;
+                layout (location = 0) in vec3 aPosition;
+                layout (location = 1) in vec2 aTexCoord;
 
                 uniform mat4 model;
                 uniform mat4 view;
                 uniform mat4 projection;
+                uniform mat4 lightSpaceMatrix;
 
                 out vec2 texCoord;
+                out vec3 fragPos;
+                out vec4 lightSpacePos;
 
                 void main()
                 {
                     texCoord = aTexCoord;
-                    gl_Position = vec4(aPosition, 1.0f) * model * view * projection;
-                    
+                    vec4 worldPosition = vec4(aPosition, 1.0f) * model;
+                    fragPos = worldPosition.xyz;
+                    lightSpacePos = worldPosition * lightSpaceMatrix;
+                    gl_Position = worldPosition * view * projection;
                 }";
 
         string fragShaderCode =
@@ -98,13 +107,59 @@ namespace GPR202_Assessment3
                 out vec4 pixelColor;
 
                 in vec2 texCoord;
+                in vec3 fragPos;
+                in vec4 lightSpacePos;
+
+                struct DirLight {
+                    vec3 direction;
+                    vec3 ambient;
+                    vec3 diffuse;
+                    vec3 specular;
+                };
 
                 uniform sampler2D texture0;
+                uniform sampler2D shadowMap;
+                uniform DirLight dirLight;
+                uniform vec3 viewPos;
+
+                float ComputeShadow(vec4 lsPos, vec3 lightDir)
+                {
+                    vec3 projCoords = lsPos.xyz / lsPos.w;
+                    projCoords = projCoords * 0.5 + 0.5;
+
+                    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+                    {
+                        return 0.0;
+                    }
+
+                    float bias = 0.0015;
+                    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+                    float shadow = 0.0;
+
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        for (int y = -1; y <= 1; y++)
+                        {
+                            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+                            shadow += (projCoords.z - bias > pcfDepth) ? 1.0 : 0.0;
+                        }
+                    }
+
+                    return shadow / 9.0;
+                }
 
                 void main()
                 {
                     vec4 texColor = texture(texture0, texCoord);
-                    pixelColor = texColor;
+                    vec3 baseColor = texColor.rgb;
+                    vec3 lightDir = normalize(-dirLight.direction);
+
+                    float shadow = ComputeShadow(lightSpacePos, lightDir);
+
+                    vec3 ambient = dirLight.ambient * baseColor;
+                    vec3 litColor = baseColor * (1.0 - shadow * 0.55);
+
+                    pixelColor = vec4(max(ambient, litColor), texColor.a);
                 }
             ";
 
@@ -116,7 +171,6 @@ namespace GPR202_Assessment3
 
         private bool firstMove = true;
         private Vector2 lastPos;
-        private float Sensitivity = -1f;
         public float FlySpeed = 35.0f; //35.0f
         public float TurnSpeed = 256.0f;
         public float LiftSpeed = 256.0f; // 256.0f
@@ -140,7 +194,6 @@ namespace GPR202_Assessment3
                 Turn = ((2.0f / viewportW) * mouse.X) - 1.0f;
                 Lift = ((2.0f / viewportH) * mouse.Y) - 1.0f;
                 position += new Vector3(0f, Lift * 0.1f, 0f) * LiftSpeed * (float)deltaT;
-
             }
         }
 
@@ -164,25 +217,71 @@ namespace GPR202_Assessment3
             up = Vector3.Normalize(Vector3.Cross(right, front));
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj)
+        private Matrix4 ComputeModelMatrix()
         {
-            model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationZ(rotation.Z) * Matrix4.CreateTranslation(position);
+            return Matrix4.Identity
+                * Matrix4.CreateScale(scale)
+                * Matrix4.CreateRotationY(rotation.Y)
+                * Matrix4.CreateRotationX(rotation.X)
+                * Matrix4.CreateRotationZ(rotation.Z)
+                * Matrix4.CreateTranslation(position);
+        }
+
+        public void DrawDepth(ShadowMap shadowMap)
+        {
+            if (shadowMap == null)
+            {
+                return;
+            }
+
+            model = ComputeModelMatrix();
+            shadowMap.ApplyDepthModel(model);
+
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indices.Count, DrawElementsType.UnsignedInt, 0);
+            GL.BindVertexArray(0);
+        }
+
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight = null, Vector3 viewPos = default, ShadowMap shadowMap = null)
+        {
+            model = ComputeModelMatrix();
 
             GL.UseProgram(planeShaderProgram);
-            
+
+            sunLight?.ApplyToShader(planeShaderProgram, viewPos);
+
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
             GL.UniformMatrix4(modelLocation, true, ref model);
             GL.UniformMatrix4(viewLocation, true, ref view);
             GL.UniformMatrix4(projectionLocation, true, ref proj);
 
-            GL.BindVertexArray(vao);
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+            if (texture0Location != -1)
+            {
+                GL.Uniform1(texture0Location, 0);
+            }
 
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, textureHandle);
 
+            if (shadowMap != null)
+            {
+                if (lightSpaceLocation != -1)
+                {
+                    Matrix4 lsMatrix = shadowMap.LightSpaceMatrix;
+                    GL.UniformMatrix4(lightSpaceLocation, true, ref lsMatrix);
+                }
+
+                if (shadowMapLocation != -1)
+                {
+                    GL.Uniform1(shadowMapLocation, 1);
+                }
+
+                shadowMap.BindDepthMap(TextureUnit.Texture1);
+            }
+
+            GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indices.Count, DrawElementsType.UnsignedInt, 0);
+            GL.BindVertexArray(0);
         }
 
         private void Setup()
@@ -204,16 +303,19 @@ namespace GPR202_Assessment3
             }
             float[] _vbo = vbodata.ToArray();
 
+            int stride = 5 * sizeof(float);
             GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * _vbo.Length, _vbo, BufferUsageHint.StaticDraw);
             GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
             GL.EnableVertexAttribArray(1);
 
             ebo = GL.GenBuffer();
             uint[] _ebo = indices.ToArray();
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
             GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(uint), _ebo, BufferUsageHint.StaticDraw);
+
+            GL.BindVertexArray(0);
 
             // Vertex and Fragment Shaders
             int vertexShaderObject = GL.CreateShader(ShaderType.VertexShader);
@@ -251,6 +353,9 @@ namespace GPR202_Assessment3
             modelLocation = GL.GetUniformLocation(planeShaderProgram, "model");
             viewLocation = GL.GetUniformLocation(planeShaderProgram, "view");
             projectionLocation = GL.GetUniformLocation(planeShaderProgram, "projection");
+            lightSpaceLocation = GL.GetUniformLocation(planeShaderProgram, "lightSpaceMatrix");
+            texture0Location = GL.GetUniformLocation(planeShaderProgram, "texture0");
+            shadowMapLocation = GL.GetUniformLocation(planeShaderProgram, "shadowMap");
 
             GL.UseProgram(planeShaderProgram);
         }
@@ -281,7 +386,7 @@ namespace GPR202_Assessment3
             vertexdata = new List<VertexData>();
             for (int i = 0; i < model.Meshes[0].VertexCount; i++)
             {
-                VertexData vertex = 
+                VertexData vertex =
                     new VertexData(model.Meshes[0].Vertices[i].X, model.Meshes[0].Vertices[i].Y, model.Meshes[0].Vertices[i].Z,
                                        model.Meshes[0].TextureCoordinateChannels[0][i].X, model.Meshes[0].TextureCoordinateChannels[0][i].Y);
                 vertexdata.Add(vertex);
@@ -322,6 +427,5 @@ namespace GPR202_Assessment3
 
             importer.Dispose();
         }
-
     }
 }
