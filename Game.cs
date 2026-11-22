@@ -21,6 +21,7 @@ namespace GPR202_Assessment3
         Terrain terrain;
         Balloon balloon;
         DirectionalLight sunLight;
+        ShadowSettings shadowSettings;
         ShadowMap shadowMap;
 
         public const int balloons_total = 8;
@@ -42,7 +43,7 @@ namespace GPR202_Assessment3
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1920, 1080));
-            this.VSync = VSyncMode.Off;
+            this.VSync = VSyncMode.On;
             this.WindowState = WindowState.Maximized;
             this.CursorState = CursorState.Grabbed;
         }
@@ -70,14 +71,15 @@ namespace GPR202_Assessment3
             float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
             plane.position.Y = groundY + 40f;
 
-            // Directional Light & Shadow Map
+            // Directional Light & Shadow Settings / Shadow Map
             sunLight = new DirectionalLight(
                 direction: new Vector3(-0.45f, -1.0f, -0.35f),
                 ambient: new Vector3(0.25f, 0.25f, 0.28f),
                 diffuse: new Vector3(0.95f, 0.92f, 0.85f),
                 specular: new Vector3(0.25f, 0.25f, 0.25f)
             );
-            shadowMap = new ShadowMap(4096, 4096);
+            shadowSettings = new ShadowSettings();
+            shadowMap = new ShadowMap(shadowSettings);
 
             // Start a New Game
             SetupNewGame();
@@ -203,7 +205,7 @@ namespace GPR202_Assessment3
             Matrix4 proj = cam.GetProjectionMatrix();
 
             // --- PASS 1: Shadow Depth Pass (centered around plane) ---
-            shadowMap.BeginPass(sunLight, plane.GetPosition(), halfExtent: 400f);
+            shadowMap.BeginPass(sunLight, plane.GetPosition());
 
             terrain.DrawDepth(shadowMap);
             plane.DrawDepth(shadowMap);

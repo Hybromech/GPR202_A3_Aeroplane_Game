@@ -12,15 +12,17 @@ namespace GPR202_Assessment3
         public int DepthTextureHandle { get; private set; }
         public int DepthShaderProgram { get; private set; }
         public Matrix4 LightSpaceMatrix { get; private set; }
+        public ShadowSettings Settings { get; }
 
         private int _modelLoc;
         private int _lightSpaceLoc;
         private bool _disposed;
 
-        public ShadowMap(int width = 4096, int height = 4096)
+        public ShadowMap(ShadowSettings settings = null)
         {
-            Width = width;
-            Height = height;
+            Settings = settings ?? new ShadowSettings();
+            Width = Settings.Resolution;
+            Height = Settings.Resolution;
             LightSpaceMatrix = Matrix4.Identity;
 
             CreateDepthFramebuffer();
@@ -129,13 +131,12 @@ namespace GPR202_Assessment3
             }
         }
 
-        public void BeginPass(
-            DirectionalLight sun,
-            Vector3 targetCenter,
-            float halfExtent = 400f,
-            float nearDist = -900f,
-            float farDist = 1800f)
+        public void BeginPass(DirectionalLight sun, Vector3 targetCenter)
         {
+            float halfExtent = Settings.HalfExtent;
+            float nearDist = Settings.NearDist;
+            float farDist = Settings.FarDist;
+
             Vector3 dir = (sun != null && sun.Direction.LengthSquared > 0.0001f)
                 ? Vector3.Normalize(sun.Direction)
                 : Vector3.Normalize(new Vector3(-0.45f, -1.0f, -0.35f));
@@ -172,7 +173,7 @@ namespace GPR202_Assessment3
             GL.Clear(ClearBufferMask.DepthBufferBit);
 
             GL.Enable(EnableCap.PolygonOffsetFill);
-            GL.PolygonOffset(0.75f, 1.0f);
+            GL.PolygonOffset(Settings.PolygonOffsetFactor, Settings.PolygonOffsetUnits);
 
             GL.UseProgram(DepthShaderProgram);
             if (_lightSpaceLoc != -1)

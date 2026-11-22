@@ -33,6 +33,11 @@ namespace GPR202_Assessment3
         private int lightSpaceLocation;
         private int texture0Location;
         private int shadowMapLocation;
+        private int slopeBiasScaleLocation;
+        private int minBiasLocation;
+        private int pcfSpreadLocation;
+        private int softEdgeRangeLocation;
+        private int shadowStrengthLocation;
 
         string vertexShaderCode =
             @"
@@ -85,6 +90,12 @@ namespace GPR202_Assessment3
                 uniform DirLight dirLight;
                 uniform vec3 viewPos;
 
+                uniform float uSlopeBiasScale;
+                uniform float uMinBias;
+                uniform float uPcfSpread;
+                uniform float uSoftEdgeRange;
+                uniform float uShadowStrength;
+
                 float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
                     vec3 projCoords = lsPos.xyz / lsPos.w;
@@ -95,8 +106,8 @@ namespace GPR202_Assessment3
                         return 0.0;
                     }
 
-                    float bias = max(0.0012 * (1.0 - dot(norm, lightDir)), 0.00025);
-                    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+                    float bias = max(uSlopeBiasScale * (1.0 - dot(norm, lightDir)), uMinBias);
+                    vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
                     vec2 offsets[9] = vec2[](
                         vec2(-1.0, -1.0), vec2( 0.0, -1.0), vec2( 1.0, -1.0),
@@ -109,10 +120,10 @@ namespace GPR202_Assessment3
                     {
                         float pcfDepth = texture(shadowMap, projCoords.xy + offsets[i] * texelSize).r;
                         float diff = (projCoords.z - bias) - pcfDepth;
-                        shadow += smoothstep(0.0, 0.0008, diff);
+                        shadow += smoothstep(0.0, max(uSoftEdgeRange, 0.00001), diff);
                     }
 
-                    return shadow / 9.0;
+                    return (shadow / 9.0) * uShadowStrength;
                 }
 
                 void main()
@@ -189,6 +200,13 @@ namespace GPR202_Assessment3
                 {
                     GL.Uniform1(shadowMapLocation, 1);
                 }
+
+                ShadowSettings cfg = shadowMap.Settings;
+                if (slopeBiasScaleLocation != -1) GL.Uniform1(slopeBiasScaleLocation, cfg.TerrainSlopeBiasScale);
+                if (minBiasLocation != -1) GL.Uniform1(minBiasLocation, cfg.TerrainMinBias);
+                if (pcfSpreadLocation != -1) GL.Uniform1(pcfSpreadLocation, cfg.TerrainPcfSpread);
+                if (softEdgeRangeLocation != -1) GL.Uniform1(softEdgeRangeLocation, cfg.TerrainSoftEdgeRange);
+                if (shadowStrengthLocation != -1) GL.Uniform1(shadowStrengthLocation, cfg.TerrainShadowStrength);
 
                 shadowMap.BindDepthMap(TextureUnit.Texture1);
             }
@@ -471,6 +489,11 @@ namespace GPR202_Assessment3
             lightSpaceLocation = GL.GetUniformLocation(terrainShaderProgram, "lightSpaceMatrix");
             texture0Location = GL.GetUniformLocation(terrainShaderProgram, "texture0");
             shadowMapLocation = GL.GetUniformLocation(terrainShaderProgram, "shadowMap");
+            slopeBiasScaleLocation = GL.GetUniformLocation(terrainShaderProgram, "uSlopeBiasScale");
+            minBiasLocation = GL.GetUniformLocation(terrainShaderProgram, "uMinBias");
+            pcfSpreadLocation = GL.GetUniformLocation(terrainShaderProgram, "uPcfSpread");
+            softEdgeRangeLocation = GL.GetUniformLocation(terrainShaderProgram, "uSoftEdgeRange");
+            shadowStrengthLocation = GL.GetUniformLocation(terrainShaderProgram, "uShadowStrength");
         }
 
         private void CreateChunks()

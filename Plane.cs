@@ -74,6 +74,10 @@ namespace GPR202_Assessment3
         private int lightSpaceLocation;
         private int texture0Location;
         private int shadowMapLocation;
+        private int biasLocation;
+        private int pcfSpreadLocation;
+        private int softEdgeRangeLocation;
+        private int shadowStrengthLocation;
 
         string vertexShaderCode =
             @"
@@ -122,6 +126,11 @@ namespace GPR202_Assessment3
                 uniform DirLight dirLight;
                 uniform vec3 viewPos;
 
+                uniform float uBias;
+                uniform float uPcfSpread;
+                uniform float uSoftEdgeRange;
+                uniform float uShadowStrength;
+
                 float ComputeShadow(vec4 lsPos, vec3 lightDir)
                 {
                     vec3 projCoords = lsPos.xyz / lsPos.w;
@@ -132,8 +141,7 @@ namespace GPR202_Assessment3
                         return 0.0;
                     }
 
-                    float bias = 0.00025;
-                    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+                    vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
                     vec2 offsets[9] = vec2[](
                         vec2(-1.0, -1.0), vec2( 0.0, -1.0), vec2( 1.0, -1.0),
@@ -145,8 +153,8 @@ namespace GPR202_Assessment3
                     for (int i = 0; i < 9; i++)
                     {
                         float pcfDepth = texture(shadowMap, projCoords.xy + offsets[i] * texelSize).r;
-                        float diff = (projCoords.z - bias) - pcfDepth;
-                        shadow += smoothstep(0.0, 0.0008, diff);
+                        float diff = (projCoords.z - uBias) - pcfDepth;
+                        shadow += smoothstep(0.0, max(uSoftEdgeRange, 0.00001), diff);
                     }
 
                     return shadow / 9.0;
@@ -159,9 +167,10 @@ namespace GPR202_Assessment3
                     vec3 lightDir = normalize(-dirLight.direction);
 
                     float shadow = ComputeShadow(lightSpacePos, lightDir);
+                    float strength = uShadowStrength;
 
                     vec3 ambient = dirLight.ambient * baseColor;
-                    vec3 litColor = baseColor * (1.0 - shadow * 0.75);
+                    vec3 litColor = baseColor * (1.0 - shadow * strength);
 
                     pixelColor = vec4(max(ambient, litColor), texColor.a);
                 }
@@ -280,6 +289,12 @@ namespace GPR202_Assessment3
                     GL.Uniform1(shadowMapLocation, 1);
                 }
 
+                ShadowSettings cfg = shadowMap.Settings;
+                if (biasLocation != -1) GL.Uniform1(biasLocation, cfg.PlaneBias);
+                if (pcfSpreadLocation != -1) GL.Uniform1(pcfSpreadLocation, cfg.PlanePcfSpread);
+                if (softEdgeRangeLocation != -1) GL.Uniform1(softEdgeRangeLocation, cfg.PlaneSoftEdgeRange);
+                if (shadowStrengthLocation != -1) GL.Uniform1(shadowStrengthLocation, cfg.PlaneShadowStrength);
+
                 shadowMap.BindDepthMap(TextureUnit.Texture1);
             }
 
@@ -360,6 +375,10 @@ namespace GPR202_Assessment3
             lightSpaceLocation = GL.GetUniformLocation(planeShaderProgram, "lightSpaceMatrix");
             texture0Location = GL.GetUniformLocation(planeShaderProgram, "texture0");
             shadowMapLocation = GL.GetUniformLocation(planeShaderProgram, "shadowMap");
+            biasLocation = GL.GetUniformLocation(planeShaderProgram, "uBias");
+            pcfSpreadLocation = GL.GetUniformLocation(planeShaderProgram, "uPcfSpread");
+            softEdgeRangeLocation = GL.GetUniformLocation(planeShaderProgram, "uSoftEdgeRange");
+            shadowStrengthLocation = GL.GetUniformLocation(planeShaderProgram, "uShadowStrength");
 
             GL.UseProgram(planeShaderProgram);
         }
