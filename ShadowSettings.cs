@@ -10,6 +10,10 @@ namespace GPR202_Assessment3
         public float BloomStrength { get; set; } = 0.2f;
         public int BloomBlurIterations { get; set; } = 5;
 
+        // Plane metallic material: high metalness and moderately polished finish.
+        public float PlaneMetalness { get; set; } = 0.9f;
+        public float PlaneRoughness { get; set; } = 0.25f;
+
         // Plane HDR highlights feeding the scene bloom pass.
         public bool PlaneBloomEnabled { get; set; } = true;
         public float PlaneBloomThreshold { get; set; } = 0.6f;

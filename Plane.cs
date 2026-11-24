@@ -20,6 +20,7 @@ namespace GPR202_Assessment3
     {
         List<VertexData> vertexdata;
         List<uint> indices;
+        private readonly List<Vector3> normals = new();
 
         private Vector3 up = Vector3.UnitY;
         public Vector3 Up => up;
@@ -87,6 +88,7 @@ namespace GPR202_Assessment3
 
                 layout (location = 0) in vec3 aPosition;
                 layout (location = 1) in vec2 aTexCoord;
+                layout (location = 2) in vec3 aNormal;
 
                 uniform mat4 model;
                 uniform mat4 view;
@@ -95,6 +97,7 @@ namespace GPR202_Assessment3
 
                 out vec2 texCoord;
                 out vec3 fragPos;
+                out vec3 worldNormal;
                 out vec4 lightSpacePos;
 
                 void main()
@@ -102,6 +105,7 @@ namespace GPR202_Assessment3
                     texCoord = aTexCoord;
                     vec4 worldPosition = vec4(aPosition, 1.0f) * model;
                     fragPos = worldPosition.xyz;
+                    worldNormal = normalize(aNormal * transpose(inverse(mat3(model))));
                     lightSpacePos = worldPosition * lightSpaceMatrix;
                     gl_Position = worldPosition * view * projection;
                 }";
@@ -114,6 +118,7 @@ namespace GPR202_Assessment3
 
                 in vec2 texCoord;
                 in vec3 fragPos;
+                in vec3 worldNormal;
                 in vec4 lightSpacePos;
 
                 struct DirLight {
@@ -129,6 +134,8 @@ namespace GPR202_Assessment3
                 uniform vec3 ambientLight;
                 uniform vec3 viewPos;
 
+                uniform float uMetalness;
+                uniform float uRoughness;
                 uniform float uBias;
                 uniform float uPcfSpread;
                 uniform float uSoftEdgeRange;
@@ -201,9 +208,31 @@ namespace GPR202_Assessment3
                     float shadow = ComputeShadow(lightSpacePos, lightDir);
                     float strength = uShadowStrength;
 
-                    vec3 ambient = ambientLight * baseColor;
-                    // Blend from full texture brightness to ambient fill in shadow.
-                    vec3 litColor = mix(baseColor, ambient, shadow * strength);
+                    // Cook-Torrance metallic BRDF: GGX distribution, Schlick Fresnel/geometry.
+                    const float PI = 3.14159265359;
+                    vec3 N = normalize(worldNormal);
+                    if (!gl_FrontFacing) N = -N;
+                    vec3 V = normalize(viewPos - fragPos);
+                    vec3 H = lightDir + V;
+                    H = dot(H, H) > 0.000001 ? normalize(H) : N;
+                    float NoL = max(dot(N, lightDir), 0.0);
+                    float NoV = max(dot(N, V), 0.0001);
+                    float NoH = max(dot(N, H), 0.0);
+                    vec3 F0 = mix(vec3(0.04), baseColor, uMetalness);
+                    vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(H, V), 0.0), 5.0);
+                    float a = uRoughness * uRoughness;
+                    float a2 = a * a;
+                    float d = NoH * NoH * (a2 - 1.0) + 1.0;
+                    float D = a2 / max(PI * d * d, 0.0000001);
+                    float k = (uRoughness + 1.0) * (uRoughness + 1.0) / 8.0;
+                    float G = (NoV / (NoV * (1.0 - k) + k))
+                        * (NoL / (NoL * (1.0 - k) + k));
+                    vec3 specular = D * G * F / max(4.0 * NoV * NoL, 0.0001);
+                    vec3 diffuse = (1.0 - F) * (1.0 - uMetalness) * baseColor / PI;
+                    // Ambient fill is an approximation; no environment reflection map is sampled.
+                    vec3 ambient = ambientLight * mix(baseColor, F0, uMetalness);
+                    vec3 litColor = ambient + (diffuse + specular) * dirLight.diffuse
+                        * NoL * (1.0 - shadow * strength);
 
                     // Raise only bright, already shaded regions into HDR for bloom.
                     float luminance = dot(litColor, vec3(0.2126, 0.7152, 0.0722));
@@ -292,7 +321,7 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, ShadowMap shadowMap = null)
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap = null)
         {
             model = ComputeModelMatrix();
 
@@ -300,6 +329,7 @@ namespace GPR202_Assessment3
 
             sunLight?.ApplyToShader(planeShaderProgram, viewPos);
             ambientLight.ApplyToShader(planeShaderProgram);
+            material.ApplyToShader(planeShaderProgram);
 
             // Reset every draw, including draws without a shadow map/settings source.
             ShadowSettings? bloomSettings = shadowMap?.Settings;
@@ -365,15 +395,20 @@ namespace GPR202_Assessment3
                 vbodata.Add(vertexdata[i].z);   // z position
                 vbodata.Add(vertexdata[i].u);   // u texcoord
                 vbodata.Add(vertexdata[i].v);   // v texcoord
+                vbodata.Add(normals[i].X);
+                vbodata.Add(normals[i].Y);
+                vbodata.Add(normals[i].Z);
             }
             float[] _vbo = vbodata.ToArray();
 
-            int stride = 5 * sizeof(float);
+            int stride = 8 * sizeof(float);
             GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * _vbo.Length, _vbo, BufferUsageHint.StaticDraw);
             GL.EnableVertexAttribArray(0);
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
             GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
             GL.EnableVertexAttribArray(1);
+            GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
+            GL.EnableVertexAttribArray(2);
 
             ebo = GL.GenBuffer();
             uint[] _ebo = indices.ToArray();
@@ -451,7 +486,7 @@ namespace GPR202_Assessment3
 
             //Import the model. All configs are set. The model
             //is imported, loaded into managed memory. Then the unmanaged memory is released, and everything is reset.
-            Scene model = importer.ImportFile(fileName, PostProcessSteps.Triangulate);
+            Scene model = importer.ImportFile(fileName, PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals);
 
             // Load the model data into own structures
             vertexdata = new List<VertexData>();
@@ -461,6 +496,8 @@ namespace GPR202_Assessment3
                     new VertexData(model.Meshes[0].Vertices[i].X, model.Meshes[0].Vertices[i].Y, model.Meshes[0].Vertices[i].Z,
                                        model.Meshes[0].TextureCoordinateChannels[0][i].X, model.Meshes[0].TextureCoordinateChannels[0][i].Y);
                 vertexdata.Add(vertex);
+                var normal = model.Meshes[0].Normals[i];
+                normals.Add(new Vector3(normal.X, normal.Y, normal.Z));
             }
 
             indices = new List<uint>();

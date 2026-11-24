@@ -22,6 +22,7 @@ namespace GPR202_Assessment3
         Balloon balloon;
         DirectionalLight sunLight;
         AmbientLight ambientLight;
+        private Material planeMaterial = null!;
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
         private Bloom bloom = null!;
@@ -93,6 +94,7 @@ namespace GPR202_Assessment3
 
             shadowSettings = new ShadowSettings();
             ambientLight = new AmbientLight(shadowSettings);
+            planeMaterial = new Material(shadowSettings);
             bloom = new Bloom(shadowSettings);
 
             // Directional Light & Shadow Settings / Shadow Map
@@ -271,7 +273,7 @@ namespace GPR202_Assessment3
             GL.DepthFunc(DepthFunction.Less);
 
             // Draw Plane with Directional Lighting & Shadows
-            plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
+            plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
 
             // Draw Balloons
             for (int i = 0; i < m_balloons.Count; i++)
