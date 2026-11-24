@@ -7,7 +7,7 @@ namespace GPR202_Assessment3
         // Scene ambient fill. Colour is linear RGB; intensity 0 disables the fill.
         public bool AmbientEnabled { get; set; } = true;
         public Vector3 AmbientColor { get; set; } = new Vector3(1.0f, 1.0f, 1.12f);
-        public float AmbientIntensity { get; set; } = 0.25f;
+        public float AmbientIntensity { get; set; } = 0.55f; //0.25f
 
         // Directional light directions for different times of day
         public Vector3 DawnDirection { get; set; } = new Vector3(-0.65f, -0.55f, 0.45f);
