@@ -48,7 +48,7 @@ namespace GPR202_Assessment3
             this.CenterWindow(new Vector2i(1920, 1080));
             this.VSync = VSyncMode.Off;
             this.WindowState = WindowState.Maximized;
-            this.CursorState = CursorState.Grabbed;
+            //this.CursorState = CursorState.Grabbed;
         }
 
         protected override void OnLoad()
@@ -151,7 +151,6 @@ namespace GPR202_Assessment3
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
                 Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
-                Console.WriteLine("Plane Y " + plane.position.Y);
             }
 
             base.OnUpdateFrame(args);
@@ -196,23 +195,43 @@ namespace GPR202_Assessment3
                 _accumulator -= FixedDeltaTime;
             }
         }
-
+        private bool firstMove = true;
+        private Vector2 lastPos;
         private void HandleInput(float deltaT)
         {
-            if (KeyboardState.IsKeyDown(Keys.Escape))
+            // Keyboard
+            KeyboardState keyboard = KeyboardState;
+            if (keyboard.IsKeyDown(Keys.Escape))
                 Close();
 
-            if (!IsFocused)
-                return;
+            // Mouse
+            MouseState mouse = this.MouseState;
+            if (firstMove) // this bool variable is initially set to true
+            {
+                lastPos = new Vector2(mouse.X, mouse.Y);
+                firstMove = false;
+            }
+            else
+            {
+                float TurnFactor = ((1.0f / viewport[2]) * mouse.X);
+                float TurnFactorN;
+                float midPoint = 0.5f;
+                if (TurnFactor > 0.5f)
+                {
+                    TurnFactor = 1 - TurnFactor;
+                    TurnFactorN = (1 - ((TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / (1 - midPoint))));
+                }
+                else
+                {
+                    TurnFactorN = (TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / midPoint);
+                }
 
-            var mouse = MouseState;
-            Vector2 rawDelta = new Vector2(mouse.Delta.X, mouse.Delta.Y);
+                float deltaX = ((TurnFactorN - 0.5f) * 2f) * 0.1f;
 
-            _smoothedLook = Vector2.Lerp(_smoothedLook, rawDelta, 1f - MathF.Pow(LookSmoothing, deltaT * 60f));
-
-            float yawDelta = _smoothedLook.X * plane.TurnSpeed * 0.09f * deltaT;
-            cam.Yaw -= yawDelta;
-            plane.Yaw += yawDelta;
+                //Apply yaw rotation to camera and plane together
+                cam.Yaw -= deltaX * 1f * plane.TurnSpeed * deltaT;
+                plane.Yaw -= deltaX * -1f * plane.TurnSpeed * deltaT;
+            }
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)

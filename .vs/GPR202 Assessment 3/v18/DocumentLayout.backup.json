@@ -1,12 +1,71 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|v:\\andrew\\university\\bachelor of software engineering\\3d graphics programming\\a3\\gpr202_a3_aeroplane_game\\game.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|solutionrelative:game.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|v:\\andrew\\university\\bachelor of software engineering\\3d graphics programming\\a3\\gpr202_a3_aeroplane_game\\gameobject.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|solutionrelative:gameobject.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|v:\\andrew\\university\\bachelor of software engineering\\3d graphics programming\\a3\\gpr202_a3_aeroplane_game\\plane.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1F89E075-2263-4732-8309-AECD73FDE297}|GPR202_A3.csproj|solutionrelative:plane.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "GameObject.cs",
+              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\GameObject.cs",
+              "RelativeDocumentMoniker": "GameObject.cs",
+              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\GameObject.cs",
+              "RelativeToolTip": "GameObject.cs",
+              "ViewState": "AgIAAA0AAAAAAAAAAAAlwBoAAAAbAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-24T14:29:39.858Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Game.cs",
+              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Game.cs",
+              "RelativeDocumentMoniker": "Game.cs",
+              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Game.cs",
+              "RelativeToolTip": "Game.cs",
+              "ViewState": "AgIAANcAAAAAAAAAAAAiwOcAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-24T13:29:45.063Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Plane.cs",
+              "DocumentMoniker": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
+              "RelativeDocumentMoniker": "Plane.cs",
+              "ToolTip": "V:\\Andrew\\University\\Bachelor of Software Engineering\\3D Graphics Programming\\A3\\GPR202_A3_Aeroplane_Game\\Plane.cs",
+              "RelativeToolTip": "Plane.cs",
+              "ViewState": "AgIAANkAAAAAAAAAAIAywOEAAAA4AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-24T13:24:29.806Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }
