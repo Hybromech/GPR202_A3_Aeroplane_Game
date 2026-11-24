@@ -24,6 +24,7 @@ namespace GPR202_Assessment3
         AmbientLight ambientLight;
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
+        private Bloom bloom = null!;
 
         public const int balloons_total = 8;
         public int balloons_left = balloons_total;
@@ -74,6 +75,7 @@ namespace GPR202_Assessment3
 
             shadowSettings = new ShadowSettings();
             ambientLight = new AmbientLight(shadowSettings);
+            bloom = new Bloom(shadowSettings);
 
             // Directional Light & Shadow Settings / Shadow Map
             sunLight = new DirectionalLight(
@@ -105,6 +107,7 @@ namespace GPR202_Assessment3
         protected override void OnUnload()
         {
             timer.Stop();
+            bloom?.Dispose();
             shadowMap?.Dispose();
             base.OnUnload();
         }
@@ -195,6 +198,8 @@ namespace GPR202_Assessment3
 
         protected override void OnRenderFrame(FrameEventArgs args)
         {
+            if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
+
             // Compute camera position from plane follow offset
             Vector3 cam_pos = new Vector3(0f, 0f, 0f);
             Vector3 cam_dir = new Vector3(cam.Yaw, 20.0f, 0.0f);
@@ -215,7 +220,8 @@ namespace GPR202_Assessment3
 
             shadowMap.EndPass(viewport[2], viewport[3]);
 
-            // --- PASS 2: Main Camera Render Pass ---
+            // --- PASS 2: HDR scene for bloom ---
+            bloom.BeginScene(FramebufferSize.X, FramebufferSize.Y);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
             // Bind shadow depth texture on TextureUnit.Texture1 for lit shaders
@@ -238,6 +244,7 @@ namespace GPR202_Assessment3
             // Draw Terrain with Directional Lighting & Shadows
             terrain.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
 
+            bloom.EndScene();
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);
         }

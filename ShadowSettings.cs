@@ -4,6 +4,12 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        // Bloom: luminance threshold, additive strength and horizontal/vertical blur pairs.
+        public bool BloomEnabled { get; set; } = true;
+        public float BloomThreshold { get; set; } = 1.0f;
+        public float BloomStrength { get; set; } = 0.2f;
+        public int BloomBlurIterations { get; set; } = 5;
+
         // Scene ambient fill. Colour is linear RGB; intensity 0 disables the fill.
         public bool AmbientEnabled { get; set; } = true;
         public Vector3 AmbientColor { get; set; } = new Vector3(1.0f, 1.0f, 1.12f);
