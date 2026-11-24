@@ -25,6 +25,7 @@ namespace GPR202_Assessment3
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
         private Bloom bloom = null!;
+        private BillBoard mountainBillboard = null!;
 
         public const int balloons_total = 8;
         public int balloons_left = balloons_total;
@@ -69,6 +70,23 @@ namespace GPR202_Assessment3
             terrain = new Terrain();
             balloon = new Balloon();
 
+            // Find a mountain summit within the terrain interior.
+            Vector3 summit = new Vector3(0f, float.MinValue, 0f);
+            for (int z = -900; z <= 900; z += 16)
+            for (int x = -900; x <= 900; x += 16)
+            {
+                float y = Terrain.GetInterpolatedHeightAtWorld(x, z);
+                if (y > summit.Y) summit = new Vector3(x, y, z);
+            }
+            // Clear nearby slopes as the plane rotates to face the camera.
+            float baseHeight = summit.Y;
+            for (int z = -24; z <= 24; z += 2)
+            for (int x = -24; x <= 24; x += 2)
+                baseHeight = Math.Max(baseHeight, Terrain.GetInterpolatedHeightAtWorld(summit.X + x, summit.Z + z));
+            summit.Y = baseHeight + 1f;
+            mountainBillboard = new BillBoard(summit);
+            Console.WriteLine($"Mountain billboard at {summit}");
+
             // Place plane safely above terrain at start
             float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
             plane.position.Y = groundY + 40f;
@@ -107,6 +125,7 @@ namespace GPR202_Assessment3
         protected override void OnUnload()
         {
             timer.Stop();
+            mountainBillboard?.Dispose();
             bloom?.Dispose();
             shadowMap?.Dispose();
             base.OnUnload();
@@ -243,6 +262,8 @@ namespace GPR202_Assessment3
 
             // Draw Terrain with Directional Lighting & Shadows
             terrain.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
+
+            mountainBillboard.Draw(view, proj, camWorldPos);
 
             bloom.EndScene();
             this.Context.SwapBuffers();
