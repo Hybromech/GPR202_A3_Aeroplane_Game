@@ -36,15 +36,19 @@ namespace GPR202_Assessment3
         float averageFPS = 0f;
         double currentFPS = 0f;
 
-        private bool firstMove = true;
-        private Vector2 lastPos;
+        private Vector2 _smoothedLook = Vector2.Zero;
+        private const float LookSmoothing = 0.515f;
+
+        // Fixed timestep
+        private float _accumulator = 0f;
+        private const float FixedDeltaTime = 1f / 60f;
 
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
             this.CenterWindow(new Vector2i(1920, 1080));
             this.VSync = VSyncMode.Off;
             this.WindowState = WindowState.Maximized;
-            this.CursorState = CursorState.Normal;
+            this.CursorState = CursorState.Grabbed;
         }
 
         protected override void OnLoad()
@@ -159,54 +163,56 @@ namespace GPR202_Assessment3
 
             float deltatime = (float)args.Time;
 
+            // ----- Input (variable timestep) -----
             HandleInput(deltatime);
-            plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], deltatime);
 
-            for (int i = m_balloons.Count - 1; i >= 0; i--)
+            float rotY = MathHelper.DegreesToRadians(180.0f + cam.Yaw);
+            plane.SetRotation(new Vector3(0f, rotY, 0f));
+            plane.UpdateVertices();
+
+            // ----- Fixed timestep – only movement & balloons -----
+            _accumulator += deltatime;
+
+            while (_accumulator >= FixedDeltaTime)
             {
-                bool wasCollected = m_balloons[i].collected;
-                if (m_balloons[i].Update(plane.position, deltatime))
-                    m_balloons.RemoveAt(i);
-                else if (m_balloons[i].collected != wasCollected)
-                    balloons_left--;
+                plane.position -= plane.Right * plane.FlySpeed * FixedDeltaTime;
+                plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], FixedDeltaTime);
+
+                for (int i = m_balloons.Count - 1; i >= 0; i--)
+                {
+                    bool wasCollected = m_balloons[i].collected;
+
+                    if (m_balloons[i].Update(plane.position, FixedDeltaTime))
+                    {
+                        m_balloons.RemoveAt(i);
+                    }
+                    else if (m_balloons[i].collected != wasCollected)
+                    {
+                        balloons_left--;
+                        Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
+                    }
+                }
+
+                _accumulator -= FixedDeltaTime;
             }
         }
 
         private void HandleInput(float deltaT)
         {
-            // Keyboard
-            KeyboardState keyboard = KeyboardState;
-            if (keyboard.IsKeyDown(Keys.Escape))
+            if (KeyboardState.IsKeyDown(Keys.Escape))
                 Close();
 
-            // Mouse
-            MouseState mouse = this.MouseState;
-            if (firstMove) // this bool variable is initially set to true
-            {
-                lastPos = new Vector2(mouse.X, mouse.Y);
-                firstMove = false;
-            }
-            else
-            {
-                float TurnFactor = ((1.0f / viewport[2]) * mouse.X);
-                float TurnFactorN;
-                float midPoint = 0.5f;
-                if (TurnFactor > 0.5f)
-                {
-                    TurnFactor = 1 - TurnFactor;
-                    TurnFactorN = (1 - ((TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / (1 - midPoint))));
-                }
-                else
-                {
-                    TurnFactorN = (TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / midPoint);
-                }
+            if (!IsFocused)
+                return;
 
-                float deltaX = ((TurnFactorN - 0.5f) * 2f) * 0.1f;
+            var mouse = MouseState;
+            Vector2 rawDelta = new Vector2(mouse.Delta.X, mouse.Delta.Y);
 
-                //Apply yaw rotation to camera and plane together
-                cam.Yaw -= deltaX * 1f * plane.TurnSpeed * deltaT;
-                plane.Yaw -= deltaX * -1f * plane.TurnSpeed * deltaT;
-            }
+            _smoothedLook = Vector2.Lerp(_smoothedLook, rawDelta, 1f - MathF.Pow(LookSmoothing, deltaT * 60f));
+
+            float yawDelta = _smoothedLook.X * plane.TurnSpeed * 0.09f * deltaT;
+            cam.Yaw -= yawDelta;
+            plane.Yaw += yawDelta;
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
@@ -224,13 +230,6 @@ namespace GPR202_Assessment3
             Vector3 camWorldPos = plane.GetPosition() - cam_pos;
             Matrix4 view = Matrix4.LookAt(camWorldPos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
             Matrix4 proj = cam.GetProjectionMatrix();
-
-            // Original 6d5c372 flight movement: advance once per rendered frame.
-            float rotY = MathHelper.DegreesToRadians(180.0f + cam.Yaw);
-            plane.SetRotation(new Vector3(0f, rotY, 0f));
-            plane.UpdateVertices();
-            plane.position -= Vector3.Normalize(plane.Right) * plane.FlySpeed * (float)args.Time;
-
 
             // --- PASS 1: Shadow Depth Pass (centered around plane) ---
             shadowMap.BeginPass(sunLight, plane.GetPosition());
