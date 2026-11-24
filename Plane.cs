@@ -78,6 +78,8 @@ namespace GPR202_Assessment3
         private int pcfSpreadLocation;
         private int softEdgeRangeLocation;
         private int shadowStrengthLocation;
+        private int bloomThresholdLocation;
+        private int bloomIntensityLocation;
 
         string vertexShaderCode =
             @"
@@ -131,6 +133,8 @@ namespace GPR202_Assessment3
                 uniform float uPcfSpread;
                 uniform float uSoftEdgeRange;
                 uniform float uShadowStrength;
+                uniform float uBloomThreshold;
+                uniform float uBloomIntensity;
 
                 float CompareShadowTexel(ivec2 texel, float receiverDepth)
                 {
@@ -201,6 +205,10 @@ namespace GPR202_Assessment3
                     // Blend from full texture brightness to ambient fill in shadow.
                     vec3 litColor = mix(baseColor, ambient, shadow * strength);
 
+                    // Raise only bright, already shaded regions into HDR for bloom.
+                    float luminance = dot(litColor, vec3(0.2126, 0.7152, 0.0722));
+                    float highlight = smoothstep(uBloomThreshold, uBloomThreshold + 0.1, luminance);
+                    litColor *= 1.0 + highlight * uBloomIntensity;
                     pixelColor = vec4(litColor, texColor.a);
                 }
             ";
@@ -292,6 +300,14 @@ namespace GPR202_Assessment3
 
             sunLight?.ApplyToShader(planeShaderProgram, viewPos);
             ambientLight.ApplyToShader(planeShaderProgram);
+
+            // Reset every draw, including draws without a shadow map/settings source.
+            ShadowSettings? bloomSettings = shadowMap?.Settings;
+            bool bloomActive = bloomSettings != null && bloomSettings.BloomEnabled
+                && bloomSettings.BloomStrength > 0f && bloomSettings.PlaneBloomEnabled;
+            GL.Uniform1(bloomThresholdLocation, Math.Max(0f, bloomSettings?.PlaneBloomThreshold ?? 0.6f));
+            GL.Uniform1(bloomIntensityLocation, bloomActive
+                ? Math.Max(0f, bloomSettings!.PlaneBloomIntensity) : 0f);
 
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
             GL.UniformMatrix4(modelLocation, true, ref model);
@@ -409,6 +425,8 @@ namespace GPR202_Assessment3
             pcfSpreadLocation = GL.GetUniformLocation(planeShaderProgram, "uPcfSpread");
             softEdgeRangeLocation = GL.GetUniformLocation(planeShaderProgram, "uSoftEdgeRange");
             shadowStrengthLocation = GL.GetUniformLocation(planeShaderProgram, "uShadowStrength");
+            bloomThresholdLocation = GL.GetUniformLocation(planeShaderProgram, "uBloomThreshold");
+            bloomIntensityLocation = GL.GetUniformLocation(planeShaderProgram, "uBloomIntensity");
 
             GL.UseProgram(planeShaderProgram);
         }

@@ -10,6 +10,11 @@ namespace GPR202_Assessment3
         public float BloomStrength { get; set; } = 0.2f;
         public int BloomBlurIterations { get; set; } = 5;
 
+        // Plane HDR highlights feeding the scene bloom pass.
+        public bool PlaneBloomEnabled { get; set; } = true;
+        public float PlaneBloomThreshold { get; set; } = 0.6f;
+        public float PlaneBloomIntensity { get; set; } = 2.0f;
+
         // Scene ambient fill. Colour is linear RGB; intensity 0 disables the fill.
         public bool AmbientEnabled { get; set; } = true;
         public Vector3 AmbientColor { get; set; } = new Vector3(1.0f, 1.0f, 1.12f);
