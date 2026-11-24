@@ -88,4 +88,9 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Resource\Billboard.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

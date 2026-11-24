@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using StbImageSharp;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
@@ -9,7 +11,7 @@ namespace GPR202_Assessment3
     {
         public Vector3 Position { get; set; }
         public Vector2 Size { get; set; } = new Vector2(48f, 32f);
-        private int program, vao;
+        private int program, vao, texture;
         private readonly int viewLocation, projectionLocation, positionLocation, rightLocation, sizeLocation;
         private bool disposed;
 
@@ -37,15 +39,11 @@ namespace GPR202_Assessment3
                 fragment = Compile(ShaderType.FragmentShader, @"#version 330 core
                     in vec2 uv;
                     out vec4 color;
+                    uniform sampler2D image;
                     void main() {
-                        // Procedural mountain marker, requiring no external texture asset.
-                        vec3 ink = vec3(0.035, 0.12, 0.18);
-                        float border = min(min(uv.x, 1.0-uv.x), min(uv.y, 1.0-uv.y));
-                        if (border < 0.04) ink = vec3(1.0, 0.65, 0.12);
-                        float peak = 0.78 - abs(uv.x - 0.5) * 1.25;
-                        if (uv.y > 0.2 && uv.y < peak)
-                            ink = uv.y > 0.58 ? vec3(1.0) : vec3(0.18, 0.65, 0.62);
-                        color = vec4(ink, 1);
+                        vec4 sampleColor = texture(image, uv);
+                        if (sampleColor.a < 0.5) discard;
+                        color = vec4(sampleColor.rgb, 1);
                     }");
                 program = GL.CreateProgram();
                 GL.AttachShader(program, vertex);
@@ -56,6 +54,24 @@ namespace GPR202_Assessment3
                 GL.DetachShader(program, vertex);
                 GL.DetachShader(program, fragment);
                 vao = GL.GenVertexArray();
+                texture = GL.GenTexture();
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, texture);
+                StbImage.stbi_set_flip_vertically_on_load(1);
+                using (var stream = File.OpenRead("Resource/Billboard.png"))
+                {
+                    var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                    Size = new Vector2(48f, 48f * image.Height / image.Width);
+                    GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
+                        image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+                }
+                GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+                GL.UseProgram(program);
+                GL.Uniform1(GL.GetUniformLocation(program, "image"), 0);
                 viewLocation = GL.GetUniformLocation(program, "view");
                 projectionLocation = GL.GetUniformLocation(program, "projection");
                 positionLocation = GL.GetUniformLocation(program, "anchor");
@@ -85,6 +101,8 @@ namespace GPR202_Assessment3
             GL.Uniform3(positionLocation, Position);
             GL.Uniform3(rightLocation, right);
             GL.Uniform2(sizeLocation, Size);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, texture);
             GL.BindVertexArray(vao);
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
             GL.BindVertexArray(0);
@@ -107,6 +125,7 @@ namespace GPR202_Assessment3
         {
             if (disposed) return;
             disposed = true;
+            if (texture != 0) GL.DeleteTexture(texture);
             if (vao != 0) GL.DeleteVertexArray(vao);
             if (program != 0) GL.DeleteProgram(program);
         }
