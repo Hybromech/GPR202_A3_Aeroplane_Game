@@ -15,6 +15,9 @@ namespace GPR202_Assessment3
         private Stopwatch timer;
         private readonly AudioSettings audioSettings = new();
         private GameAudio? audio;
+        private Vector3 smoothCamera, smoothTarget;
+        private bool cameraReady;
+        private double cameraTime;
         private int[] viewport = new int[4];
 
         Camera cam;
@@ -162,12 +165,12 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+                Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
             }
 
             base.OnUpdateFrame(args);
 
-            audio?.Update(flight.Throttle, IsFocused);
+            audio?.Update(flight.Throttle, IsFocused, flight.StallWarning);
             if (!IsFocused)
             {
                 return;
@@ -191,6 +194,7 @@ namespace GPR202_Assessment3
                     Vector3 restart = flight.Position;
                     restart.Y = Terrain.GetInterpolatedHeightAtWorld(restart.X, restart.Z) + 250f;
                     flight.Reset(restart);
+                    cameraReady = false;
                 }
                 plane.position = flight.Position;
                 plane.PhysicsOrientation = flight.Orientation;
@@ -217,6 +221,7 @@ namespace GPR202_Assessment3
         private void HandleInput(float deltaT)
         {
             if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
+            if (KeyboardState.IsKeyPressed(Keys.F2)) flightSettings.AssistedControls = !flightSettings.AssistedControls;
             // Cursor displacement is a virtual stick; pitch and rudder are inverted below.
             pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
             rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
@@ -229,6 +234,8 @@ namespace GPR202_Assessment3
             yawInput = (KeyboardState.IsKeyDown(Keys.D) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.A) ? 1f : 0f);
             pitchInput = -pitchInput;
             yawInput = -yawInput;
+            if (flightSettings.AssistedControls)
+                pitchInput = 0.35f*pitchInput + 0.65f*pitchInput*pitchInput*pitchInput;
             flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
                 * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
         }
@@ -240,6 +247,15 @@ namespace GPR202_Assessment3
             // Follow heading and pitch without inheriting aircraft bank.
             Vector3 camWorldPos = plane.position - flight.Forward * 15f + Vector3.UnitY * 4.5f;
             Vector3 cameraTarget = plane.position + flight.Forward * 8f;
+            float cameraBlend = 1f - MathF.Exp(-flightSettings.CameraFollowSpeed * (float)Math.Min(args.Time, 0.1));
+            if (!cameraReady) { smoothCamera = camWorldPos; smoothTarget = cameraTarget; cameraReady = true; }
+            smoothCamera = Vector3.Lerp(smoothCamera, camWorldPos, cameraBlend);
+            smoothTarget = Vector3.Lerp(smoothTarget, cameraTarget, cameraBlend);
+            camWorldPos = smoothCamera;
+            cameraTarget = smoothTarget;
+            cameraTime += args.Time;
+            float shake = flight.StallWarning * flightSettings.StallShakeAmount;
+            camWorldPos += new Vector3((float)Math.Sin(cameraTime*73), (float)Math.Sin(cameraTime*91), 0f) * shake;
             Vector3 viewDirection = Vector3.Normalize(cameraTarget - camWorldPos);
             // Avoid a degenerate LookAt when looking almost straight up or down.
             Vector3 cameraUp = MathF.Abs(Vector3.Dot(viewDirection, Vector3.UnitY)) > 0.999f

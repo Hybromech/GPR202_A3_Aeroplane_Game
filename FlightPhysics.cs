@@ -13,6 +13,9 @@ namespace GPR202_Assessment3
         public float Throttle { get; set; } = 0.65f;
         public float Airspeed => Velocity.Length;
         public float AngleOfAttack { get; private set; }
+        public float BankAngle => MathF.Atan2(Right.Y, Up.Y);
+        public float StallWarning => Math.Clamp((MathF.Abs(AngleOfAttack) /
+            MathHelper.DegreesToRadians(settings.StallAngleDegrees) - 0.75f) / 0.25f, 0f, 1f);
         public bool IsStalled => MathF.Abs(AngleOfAttack) > MathHelper.DegreesToRadians(settings.StallAngleDegrees);
         public Vector3 Forward => Vector3.TransformVector(Vector3.UnitZ, Orientation);
         public Vector3 Up => Vector3.TransformVector(Vector3.UnitY, Orientation);
@@ -74,6 +77,31 @@ namespace GPR202_Assessment3
                 settings.PitchAuthority*pitch - 1.8f*(AngleOfAttack-trimAlpha) - 2.5f*rates.X,
                 settings.YawAuthority*yaw + 1.2f*beta - 2.0f*rates.Y,
                 settings.RollAuthority*roll - 2.0f*rates.Z) * authority;
+            if (settings.AssistedControls)
+            {
+                float bank = BankAngle;
+                float safety = 1f - StallWarning;
+                float targetBank = roll * MathHelper.DegreesToRadians(Math.Clamp(settings.AssistedMaxBankDegrees, 0f, settings.MaxBankAngleDegrees));
+                float bankError = MathF.Atan2(MathF.Sin(targetBank-bank), MathF.Cos(targetBank-bank));
+                float rollRate = Math.Clamp(bankError * 2.5f, -settings.AssistedRollRate, settings.AssistedRollRate);
+                // Near vertical, horizon bank is undefined: damp roll rather than chase it.
+                if (Right.Y*Right.Y + Up.Y*Up.Y < 0.01f) rollRate = 0f;
+                acceleration.Z = Math.Clamp((rollRate-rates.Z)*5f, -settings.RollAuthority, settings.RollAuthority)*authority;
+
+                // Pilot requests pitch rate; assistance uses bounded elevator torque, never extra lift.
+                float turnLoad = 1f / Math.Max(0.5f, MathF.Cos(bank)) - 1f;
+                float turnPitch = Math.Clamp(turnLoad*0.12f - Velocity.Y*0.008f, 0f, 0.18f)
+                    * settings.TurnLiftAssistance * safety * (1f-MathF.Abs(pitch));
+                float pitchRate = pitch * settings.AssistedPitchRate + turnPitch;
+                acceleration.X = (Math.Clamp((pitchRate-rates.X)*3f, -settings.PitchAuthority, settings.PitchAuthority)
+                    - 1.8f*(AngleOfAttack-trimAlpha))*authority;
+
+                // Follow the banked lift's turn, while damping sideslip. Manual rudder takes priority.
+                float turnYaw = -9.81f*MathF.Sin(bank)/Math.Max(30f,speed);
+                float yawAssist = Math.Clamp((turnYaw-rates.Y)*2f + 1.5f*beta, -0.4f, 0.4f)
+                    * settings.CoordinatedTurnAssistance * safety * (1f-MathF.Abs(yaw));
+                acceleration.Y += yawAssist*authority;
+            }
             rates += acceleration * dt;
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
@@ -85,7 +113,7 @@ namespace GPR202_Assessment3
             if (horizonRight*horizonRight + horizonUp*horizonUp > 0.0001f)
             {
                 float bank = MathF.Atan2(horizonRight, horizonUp);
-                float limit = MathHelper.DegreesToRadians(Math.Clamp(settings.MaxBankAngleDegrees, 0f, 90f));
+                float limit = MathHelper.DegreesToRadians(Math.Clamp(settings.AssistedControls ? Math.Min(settings.MaxBankAngleDegrees, settings.AssistedMaxBankDegrees) : settings.MaxBankAngleDegrees, 0f, 90f));
                 float boundedBank = Math.Clamp(bank, -limit, limit);
                 if (bank != boundedBank)
                 {

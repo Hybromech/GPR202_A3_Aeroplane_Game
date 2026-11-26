@@ -3,6 +3,14 @@ namespace GPR202_Assessment3
     // SI units; a tunable simplified aircraft, not a certified P-51 flight model.
     public sealed class FlightSettings
     {
+        public bool AssistedControls { get; set; } = true;
+        public float AssistedMaxBankDegrees { get; set; } = 60f;
+        public float AssistedRollRate { get; set; } = 1.0f;
+        public float AssistedPitchRate { get; set; } = 0.65f;
+        public float TurnLiftAssistance { get; set; } = 0.65f;
+        public float CoordinatedTurnAssistance { get; set; } = 1f;
+        public float CameraFollowSpeed { get; set; } = 7f;
+        public float StallShakeAmount { get; set; } = 0.06f;
         public float Mass { get; set; } = 3500f;
         public float WingArea { get; set; } = 22f;
         public float AirDensity { get; set; } = 1.225f;

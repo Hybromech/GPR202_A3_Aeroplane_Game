@@ -25,10 +25,11 @@ public sealed class GameAudio : IDisposable
             Dispose();
         }
     }
-    public void Update(float throttle, bool focused)
+    public void Update(float throttle, bool focused, float stallWarning = 0f)
     {
         mix.Throttle = Math.Clamp(throttle, 0f, 1f);
         mix.Focused = focused;
+        mix.StallWarning = Math.Clamp(stallWarning, 0f, 1f);
     }
     public void PlayBalloonPop() => mix.PlayBalloonPop();
     public void Dispose()
@@ -46,6 +47,8 @@ public sealed class GameAudioMix : ISampleProvider
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
     private readonly AudioSettings settings;
     public volatile float Throttle = 0.65f;
+    public volatile float StallWarning;
+    private double warningLevel;
     public volatile bool Focused = true;
     private int pendingPops;
     private readonly double[] popAge = new double[8];
@@ -110,7 +113,9 @@ public sealed class GameAudioMix : ISampleProvider
                 double age = popAge[v];
                 if (age < 0.3) { pop += (noise*0.8+Tone(180,age)*0.3)*Math.Exp(-age*32)*Math.Min(1,age/0.001); popAge[v]+=dt; }
             }
-            double common = engine*Math.Clamp(settings.EngineVolume,0,1) + pop*Math.Clamp(settings.PopVolume,0,1);
+            warningLevel += (StallWarning-warningLevel)*0.001;
+            double warning = Tone(850,time) * (0.5+0.5*Tone(4,time)) * warningLevel * Math.Clamp(settings.StallWarningVolume,0,1);
+            double common = warning + engine*Math.Clamp(settings.EngineVolume,0,1) + pop*Math.Clamp(settings.PopVolume,0,1);
             double gain = Math.Clamp(settings.MasterVolume,0,1)*focusGain;
             double musicGain = Math.Clamp(settings.MusicVolume,0,1)*musicFade;
             buffer[offset+i] = (float)Math.Tanh((common+(left+arp+bass+drum)*musicGain)*gain);

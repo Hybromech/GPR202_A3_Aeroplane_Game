@@ -7,3 +7,5 @@ AudioSettings.cs controls Enabled, MasterVolume, EngineVolume, PopVolume and Mus
 The engine loops continuously and smoothly changes pitch and level with throttle, including an idle sound at zero throttle. One pop is triggered when a balloon first becomes collected; up to eight overlapping effects are mixed. Background music begins when loading finishes and repeats a four-chord cinematic-style synth arrangement with pad, bass, arpeggio and percussion. All sounds are original procedural synthesis, not sampled aircraft recordings or orchestral recordings; no audio assets need downloading.
 
 Run automated checks: dotnet run --project tests/AudioChecks/AudioChecks.csproj -c Release
+
+StallWarningVolume controls a pulsing tone that grows as angle of attack approaches stall.
