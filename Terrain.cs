@@ -40,6 +40,17 @@ namespace GPR202_Assessment3
         private int softEdgeRangeLocation;
         private int shadowStrengthLocation;
         private int fastShadowLocation;
+        private readonly Vector3[] scorchMarks = new Vector3[16];
+        private readonly int[] scorchLocations = new int[16];
+        private int scorchCount, nextScorch, scorchCountLocation;
+
+        // Stored in world X/Z so the mark follows terrain slopes and every LOD.
+        public void AddScorchMark(Vector3 position, float radius = 18f)
+        {
+            scorchMarks[nextScorch] = new Vector3(position.X, position.Z, Math.Max(1f, radius));
+            nextScorch = (nextScorch + 1) % scorchMarks.Length;
+            scorchCount = Math.Min(scorchCount + 1, scorchMarks.Length);
+        }
 
         string vertexShaderCode =
             @"
@@ -99,6 +110,24 @@ namespace GPR202_Assessment3
                 uniform float uSoftEdgeRange;
                 uniform float uShadowStrength;
                 uniform bool uFastShadows;
+                uniform int uScorchCount;
+                uniform vec3 uScorchMarks[16];
+
+                float ScorchMask(vec2 position)
+                {
+                    float result = 0.0;
+                    for (int i=0; i<uScorchCount; i++)
+                    {
+                        vec2 delta = (position-uScorchMarks[i].xy)/uScorchMarks[i].z;
+                        float d = length(delta);
+                        if (d > 1.2) continue;
+                        float irregular = 0.08*sin(delta.x*19.0+sin(delta.y*13.0))
+                            + 0.06*sin(delta.y*23.0+delta.x*7.0);
+                        float mask = 1.0-smoothstep(0.35,1.05,d+irregular);
+                        result = max(result,mask);
+                    }
+                    return result;
+                }
 
                 float CompareShadowTexel(ivec2 texel, float receiverDepth)
                 {
@@ -228,6 +257,9 @@ namespace GPR202_Assessment3
                 void main()
                 {
                     vec3 baseColor = texture(texture0, texCoord).rgb;
+                    float charAmount = ScorchMask(fragPos.xz);
+                    // Keep a little underlying grain rather than a flat black disk.
+                    baseColor = mix(baseColor, baseColor*0.045+vec3(0.008), charAmount);
                     vec3 norm = normalize(normal);
                     vec3 lightDir = normalize(-dirLight.direction);
                     vec3 viewDir = normalize(viewPos - fragPos);
@@ -253,6 +285,9 @@ namespace GPR202_Assessment3
             frustum = new Frustum();
             ImportHeightMap();
             SetupShaders();
+            scorchCountLocation = GL.GetUniformLocation(terrainShaderProgram, "uScorchCount");
+            for (int i=0;i<scorchLocations.Length;i++)
+                scorchLocations[i] = GL.GetUniformLocation(terrainShaderProgram, $"uScorchMarks[{i}]");
             CreateChunks();
         }
 
@@ -283,6 +318,9 @@ namespace GPR202_Assessment3
         public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, ShadowMap shadowMap = null)
         {
             GL.UseProgram(terrainShaderProgram);
+
+            GL.Uniform1(scorchCountLocation, scorchCount);
+            for (int i=0;i<scorchCount;i++) GL.Uniform3(scorchLocations[i], scorchMarks[i]);
 
             sunLight?.ApplyToShader(terrainShaderProgram, viewPos);
             ambientLight.ApplyToShader(terrainShaderProgram);

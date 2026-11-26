@@ -217,6 +217,7 @@ namespace GPR202_Assessment3
                     crashed = true;
                     crashTime = 0f;
                     plane.position = flight.Position;
+                    terrain.AddScorchMark(plane.position);
                     explosion.Explode(plane.position + Vector3.UnitY*2f);
                     audio?.Update(0f, true, 0f, false);
                     audio?.PlayExplosion();
