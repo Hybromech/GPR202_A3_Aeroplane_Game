@@ -33,3 +33,5 @@ Ground impact destroys the active plane, hides its visible/shadow meshes and emi
 Crashes leave an irregular, feathered charred patch on the terrain (18-unit radius). The terrain material is darkened directly, so the mark follows slopes without decal flicker. The latest 16 crash marks persist through respawns for the current session; closing the game clears them.
 
 Collect all eight balloons to win: the full plane (including propeller) switches to a solid gold metallic material with low roughness, and victory music replaces the background track. Normal shading still applies to the gold. Restart clears the reward without modifying the configured normal material.
+
+Victory also launches six staggered, coloured fireworks ahead of the plane over 2.5 seconds. Sparks fade naturally; crashes and restarts clear the celebration.

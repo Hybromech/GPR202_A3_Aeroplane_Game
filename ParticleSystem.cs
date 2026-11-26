@@ -19,6 +19,17 @@ public sealed class ParticleSystem
             Particles[i]=new Particle{Position=position,Velocity=direction*(8+Random.Shared.NextSingle()*25),Lifetime=0.6f+Random.Shared.NextSingle()*1.9f};
         }
     }
+    public void Firework(Vector3 position, Vector3 drift)
+    {
+        Explode(position);
+        for(int i=0;i<Count;i++) {
+            float y=Random.Shared.NextSingle()*2f-1f;
+            float angle=Random.Shared.NextSingle()*MathF.Tau;
+            float radial=MathF.Sqrt(1f-y*y);
+            Particles[i].Velocity=new Vector3(radial*MathF.Cos(angle),y,radial*MathF.Sin(angle))*25f+drift;
+            Particles[i].Lifetime=1.5f+Random.Shared.NextSingle();
+        }
+    }
     public void Update(float dt)
     {
         for(int i=Count-1;i>=0;i--) {

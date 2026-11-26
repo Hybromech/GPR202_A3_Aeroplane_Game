@@ -16,6 +16,7 @@ namespace GPR202_Assessment3
         private readonly AudioSettings audioSettings = new();
         private GameAudio? audio;
         private readonly ParticleSystem explosion = new();
+        private readonly VictoryFireworks fireworks = new();
         private ParticleRenderer? particleRenderer;
         private bool crashed;
         private float crashTime;
@@ -132,6 +133,7 @@ namespace GPR202_Assessment3
 
         private void SetupNewGame()
         {
+            fireworks.Clear();
             balloons_left = balloons_total;
             planeMaterial.VictoryGold = false;
             audio?.SetVictory(false);
@@ -216,6 +218,7 @@ namespace GPR202_Assessment3
                 flight.Step(FixedDeltaTime, pitchInput, rollInput, yawInput);
                 if (flight.Position.Y < Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z) + 2f)
                 {
+                    fireworks.Clear();
                     crashed = true;
                     crashTime = 0f;
                     plane.position = flight.Position;
@@ -245,12 +248,14 @@ namespace GPR202_Assessment3
                         if (balloons_left == 0)
                         {
                             planeMaterial.VictoryGold = true;
+                            fireworks.Start();
                             audio?.SetVictory(true);
                         }
                         Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
                     }
                 }
 
+                fireworks.Update(FixedDeltaTime, plane.position, flight.Forward, flight.Velocity);
                 plane.UpdatePropeller(FixedDeltaTime, shadowSettings.PropellerRpm * flight.PropellerSpeedFraction);
                 _accumulator -= FixedDeltaTime;
             }
@@ -365,6 +370,8 @@ namespace GPR202_Assessment3
             gpuTimings.End();
 
             particleRenderer?.Draw(explosion, view, proj, FramebufferSize.Y);
+            for (int i=0;i<fireworks.Bursts.Length;i++)
+                particleRenderer?.Draw(fireworks.Bursts[i], view, proj, FramebufferSize.Y, fireworks.Colors[i]);
 
             gpuTimings.Begin("Bloom", shadowSettings.GpuTimingEnabled);
             bloom.EndScene();
