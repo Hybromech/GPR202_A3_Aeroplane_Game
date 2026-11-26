@@ -1,12 +1,13 @@
 using System;using GPR202_Assessment3;using OpenTK.Mathematics;class Check {static void Assert(bool b,string m){if(!b)throw new Exception(m);}static void CheckRoll(){
-foreach(float speed in new[]{0f,30f,150f}) foreach(float input in new[]{-1f,0f,0.5f,1f}) {
-var f=new FlightPhysics(new FlightSettings{StartSpeed=speed,RollAuthority=3f}); f.Reset(Vector3.Zero);
-Vector3 right=f.Right, up=f.Up; const float dt=1f/120;
+foreach(float speed in new[]{30f,85f,150f}) foreach(float input in new[]{-1f,0.5f,1f}) {
+var f=new FlightPhysics(new FlightSettings{StartSpeed=speed,RollAuthority=3f}); f.Reset(new Vector3(0,1000,0)); const float dt=1f/120;
 f.Step(dt,0,input,0);
-float angle=MathF.Atan2(Vector3.Dot(f.Right,up),Vector3.Dot(f.Right,right));
-Assert(MathF.Abs(angle-3f*input*dt)<0.00001f,"Direct roll rate must match input independently of airspeed");
-right=f.Right;up=f.Up;f.Step(dt,0,0,0);
-angle=MathF.Atan2(Vector3.Dot(f.Right,up),Vector3.Dot(f.Right,right));
-Assert(MathF.Abs(angle)<0.00001f,"Releasing roll must stop banking immediately");
-} Console.WriteLine("PASS: constant roll rate, direction, partial input, airspeed independence and immediate stop.");
+Assert(MathF.Abs(MathF.Atan2(f.Right.Y,f.Up.Y)-MathF.Sign(input)*3f*dt)<0.0001f,"Bank adjustment rate and direction");
+for(int i=0;i<240;i++) f.Step(dt,0,input,0);
+float target=input*MathHelper.DegreesToRadians(60);
+Assert(MathF.Abs(MathF.Atan2(f.Right.Y,f.Up.Y)-target)<0.001f,"Must reach and hold target bank");
+for(int i=0;i<120;i++) {f.Step(dt,0,input,0); Assert(MathF.Abs(MathF.Atan2(f.Right.Y,f.Up.Y)-target)<0.001f,"Held input must not keep rolling");}
+for(int i=0;i<120;i++) f.Step(dt,0,0,0);
+Assert(MathF.Abs(MathF.Atan2(f.Right.Y,f.Up.Y))<0.001f,"Centre must level wings");
+} Console.WriteLine("PASS: target bank, held angle, centring, rate and direction at multiple airspeeds.");
 } static void Main(){const float dt=1f/120; CheckRoll();var cfg=new FlightSettings();var p=new FlightPhysics(cfg);p.Reset(new Vector3(0,1000,0));Assert(p.LiftCoefficient(MathHelper.DegreesToRadians(35))<p.LiftCoefficient(MathHelper.DegreesToRadians(16)),"Lift must drop beyond stall");bool stalled=false;float maxAoA=0;for(int i=0;i<1200;i++){p.Step(dt,1,0,0);stalled|=p.IsStalled;maxAoA=Math.Max(maxAoA,Math.Abs(p.AngleOfAttack));}Console.WriteLine($"Pull-up max AoA={MathHelper.RadiansToDegrees(maxAoA)}, stalled={stalled}, speed={p.Airspeed}");Assert(stalled,"Hard pull must stall");bool recovered=false;for(int i=0;i<1200;i++){p.Step(dt,-0.25f,0,0);if(!p.IsStalled&&p.Airspeed>30)recovered=true;}Assert(recovered,"Must recover with reduced AoA");p.Reset(new Vector3(0,1000,0));p.Throttle=0;for(int i=0;i<1200;i++)p.Step(dt,0,0,0);Assert(p.Position.Y<1000,"Engine-off flight must descend");for(int i=0;i<72000;i++){p.Step(dt,MathF.Sin(i*.003f),MathF.Sin(i*.002f),.1f);Assert(float.IsFinite(p.Position.X)&&float.IsFinite(p.Position.Y)&&float.IsFinite(p.Position.Z),"Finite state");Assert(Math.Abs(p.Forward.Length-1)<.001&&Math.Abs(Vector3.Dot(p.Forward,p.Up))<.001,"Orthonormal orientation");}Console.WriteLine("PASS: lift drop, accelerated stall, recovery, engine-off descent and 10-minute stability.");}}

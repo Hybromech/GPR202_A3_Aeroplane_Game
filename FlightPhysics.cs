@@ -65,7 +65,7 @@ namespace GPR202_Assessment3
             Position += Velocity * dt;
 
             // Pitch and yaw retain aerodynamic torque, damping and restoring moments.
-            // Roll is commanded directly as a constant angular speed.
+            // Roll input selects a bank angle, approached at a bounded constant rate.
             float authority = Math.Clamp(speed*speed / (70f*70f), 0f, 2f);
             float trimAlpha = (settings.Mass*9.81f / Math.Max(1f, pressure*settings.WingArea)
                 - settings.ZeroAngleLift) / settings.LiftSlope;
@@ -76,10 +76,23 @@ namespace GPR202_Assessment3
                 0f) * authority;
             rates += acceleration * dt;
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));
-            rates.Z = Math.Max(0f, settings.RollAuthority) * roll;
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
-                * Matrix4.CreateRotationY(rates.Y*dt)
-                * Matrix4.CreateRotationZ(rates.Z*dt) * Orientation;
+                * Matrix4.CreateRotationY(rates.Y*dt) * Orientation;
+            // Measure bank about the current forward axis relative to the horizon.
+            // At vertical flight the horizon bank is undefined; retain the current roll.
+            float horizonRight = Right.Y, horizonUp = Up.Y;
+            rates.Z = 0f;
+            if (horizonRight*horizonRight + horizonUp*horizonUp > 0.0001f)
+            {
+                float targetBank = roll * MathHelper.DegreesToRadians(
+                    Math.Clamp(settings.MaxBankAngleDegrees, 0f, 89f));
+                float bank = MathF.Atan2(horizonRight, horizonUp);
+                float error = MathF.Atan2(MathF.Sin(targetBank-bank), MathF.Cos(targetBank-bank));
+                float maxStep = Math.Max(0f, settings.RollAuthority) * dt;
+                float bankStep = Math.Clamp(error, -maxStep, maxStep);
+                rates.Z = bankStep / dt;
+                Orientation = Matrix4.CreateRotationZ(bankStep) * Orientation;
+            }
             // Remove accumulated numerical drift without constraining pitch or bank.
             forward = Vector3.Normalize(Forward);
             right = Vector3.Normalize(Vector3.Cross(Up, forward));

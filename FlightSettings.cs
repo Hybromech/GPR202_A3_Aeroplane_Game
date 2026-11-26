@@ -13,8 +13,9 @@ namespace GPR202_Assessment3
         public float ParasiticDrag { get; set; } = 0.025f;
         public float InducedDrag { get; set; } = 0.065f;
         public float PitchAuthority { get; set; } = 1.5f;
-        // Maximum roll rate in radians/second; input scales this directly, independent of airspeed.
+        // Bank adjustment rate in radians/second, independent of airspeed.
         public float RollAuthority { get; set; } = 3.0f;
+        public float MaxBankAngleDegrees { get; set; } = 60f;
         public float YawAuthority { get; set; } = 0.6f;
         public float StartSpeed { get; set; } = 85f;
     }
