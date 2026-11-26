@@ -12,7 +12,8 @@ namespace GPR202_Assessment3
         private readonly int[] textures = new int[3];
         private int depth, vao, extract, blur, composite;
         private int thresholdLocation, directionLocation, strengthLocation;
-        private int width, height;
+        private int width, height, blurWidth, blurHeight, downsample;
+        private bool bypass;
         private bool disposed;
 
         private const string Vertex = @"#version 330 core
@@ -84,6 +85,13 @@ namespace GPR202_Assessment3
         public void BeginScene(int framebufferWidth, int framebufferHeight)
         {
             if (disposed) throw new ObjectDisposedException(nameof(Bloom));
+            bypass = !settings.BloomEnabled || settings.BloomStrength <= 0f;
+            if (bypass)
+            {
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                GL.Viewport(0, 0, Math.Max(1, framebufferWidth), Math.Max(1, framebufferHeight));
+                return;
+            }
             Resize(Math.Max(1, framebufferWidth), Math.Max(1, framebufferHeight));
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, targets[0]);
             GL.Viewport(0, 0, width, height);
@@ -93,6 +101,7 @@ namespace GPR202_Assessment3
         public void EndScene()
         {
             if (disposed) throw new ObjectDisposedException(nameof(Bloom));
+            if (bypass) return;
             if (width == 0) throw new InvalidOperationException("BeginScene must run first.");
             bool depthTest = GL.IsEnabled(EnableCap.DepthTest);
             bool blend = GL.IsEnabled(EnableCap.Blend);
@@ -107,6 +116,7 @@ namespace GPR202_Assessment3
                 float strength = settings.BloomEnabled ? Math.Max(0f, settings.BloomStrength) : 0f;
                 if (strength > 0f)
                 {
+                    GL.Viewport(0, 0, blurWidth, blurHeight);
                     GL.UseProgram(extract);
                     GL.Uniform1(thresholdLocation, Math.Max(0f, settings.BloomThreshold));
                     Pass(targets[1], textures[0]);
@@ -114,12 +124,13 @@ namespace GPR202_Assessment3
                     int iterations = Math.Clamp(settings.BloomBlurIterations, 1, 20);
                     for (int i = 0; i < iterations; ++i)
                     {
-                        GL.Uniform2(directionLocation, 1f, 0f);
+                        GL.Uniform2(directionLocation, (float)blurWidth / width, 0f);
                         Pass(targets[2], textures[1]);
-                        GL.Uniform2(directionLocation, 0f, 1f);
+                        GL.Uniform2(directionLocation, 0f, (float)blurHeight / height);
                         Pass(targets[1], textures[2]);
                     }
                 }
+                GL.Viewport(0, 0, width, height);
                 GL.UseProgram(composite);
                 GL.Uniform1(strengthLocation, strength);
                 GL.ActiveTexture(TextureUnit.Texture1);
@@ -151,8 +162,12 @@ namespace GPR202_Assessment3
 
         private void Resize(int w, int h)
         {
-            if (width == w && height == h) return;
+            int scale = Math.Clamp(settings.BloomDownsample, 1, 4);
+            if (width == w && height == h && downsample == scale) return;
             DeleteTargets();
+            downsample = scale;
+            blurWidth = Math.Max(1, (w + scale - 1) / scale);
+            blurHeight = Math.Max(1, (h + scale - 1) / scale);
             GL.ActiveTexture(TextureUnit.Texture0);
             try
             {
@@ -163,7 +178,7 @@ namespace GPR202_Assessment3
                     GL.BindFramebuffer(FramebufferTarget.Framebuffer, targets[i]);
                     GL.BindTexture(TextureTarget.Texture2D, textures[i]);
                     GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f,
-                        w, h, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+                        i == 0 ? w : blurWidth, i == 0 ? h : blurHeight, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);

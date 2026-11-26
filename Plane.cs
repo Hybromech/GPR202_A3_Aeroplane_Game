@@ -173,6 +173,7 @@ namespace GPR202_Assessment3
 
                 float ComputeShadow(vec4 lsPos, vec3 lightDir)
                 {
+                    if (uShadowStrength <= 0.0) return 0.0;
                     vec3 projCoords = lsPos.xyz / lsPos.w;
                     projCoords = projCoords * 0.5 + 0.5;
 

@@ -8,6 +8,8 @@ namespace GPR202_Assessment3
         public bool BloomEnabled { get; set; } = true;
         public float BloomThreshold { get; set; } = 1.0f;
         public float BloomStrength { get; set; } = 0.2f;
+        // 1 = full resolution; 2 = half width/height.
+        public int BloomDownsample { get; set; } = 2;
         public int BloomBlurIterations { get; set; } = 5;
 
         // Plane metallic material: high metalness and moderately polished finish.

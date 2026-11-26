@@ -161,6 +161,7 @@ namespace GPR202_Assessment3
 
                 float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
+                    if (uShadowStrength <= 0.0) return 0.0;
                     vec3 projCoords = lsPos.xyz / lsPos.w;
                     projCoords = projCoords * 0.5 + 0.5;
 
@@ -678,7 +679,7 @@ namespace GPR202_Assessment3
         public TerrainChunk(uint startX, uint startZ, uint size, float[,] hm)
         {
             List<float> vertexdata = new List<float>();
-            List<uint> indices = new List<uint>();
+            List<ushort> indices = new List<ushort>();
 
             uint endX = Math.Min(startX + size, Terrain.width - 1);
             uint endZ = Math.Min(startZ + size, Terrain.length - 1);
@@ -751,13 +752,13 @@ namespace GPR202_Assessment3
                     uint i2 = (x + 1) * spanZ + (z + 1);
                     uint i3 = x * spanZ + (z + 1);
 
-                    indices.Add(i0);
-                    indices.Add(i1);
-                    indices.Add(i2);
+                    indices.Add(checked((ushort)i0));
+                    indices.Add(checked((ushort)i1));
+                    indices.Add(checked((ushort)i2));
 
-                    indices.Add(i2);
-                    indices.Add(i3);
-                    indices.Add(i0);
+                    indices.Add(checked((ushort)i2));
+                    indices.Add(checked((ushort)i3));
+                    indices.Add(checked((ushort)i0));
                 }
             }
 
@@ -768,7 +769,7 @@ namespace GPR202_Assessment3
             SetupBuffers(vertexdata, indices);
         }
 
-        private void SetupBuffers(List<float> vertexdata, List<uint> indices)
+        private void SetupBuffers(List<float> vertexdata, List<ushort> indices)
         {
             int stride = 8 * sizeof(float);
 
@@ -792,8 +793,8 @@ namespace GPR202_Assessment3
             GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
 
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-            uint[] _ebo = indices.ToArray();
-            GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(uint), _ebo, BufferUsageHint.StaticDraw);
+            ushort[] _ebo = indices.ToArray();
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _ebo.Length * sizeof(ushort), _ebo, BufferUsageHint.StaticDraw);
 
             GL.BindVertexArray(0);
         }
@@ -809,7 +810,7 @@ namespace GPR202_Assessment3
             shadowMap.ApplyDepthModel(chunkModel);
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedShort, 0);
             GL.BindVertexArray(0);
         }
 
@@ -819,7 +820,7 @@ namespace GPR202_Assessment3
             GL.UniformMatrix4(modelLoc, true, ref chunkModel);
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedShort, 0);
             GL.BindVertexArray(0);
         }
     }
