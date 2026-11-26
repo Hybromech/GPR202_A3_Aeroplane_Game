@@ -4,6 +4,8 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        public float PropellerRpm { get; set; } = 900f;
+
         public bool GpuTimingEnabled { get; set; } = true;
         // Narrower 3x3 terrain kernel; false restores the wider tapered filter.
         public bool TerrainFastShadows { get; set; } = true;

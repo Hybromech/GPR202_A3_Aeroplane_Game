@@ -165,6 +165,7 @@ namespace GPR202_Assessment3
             }
 
             float deltatime = (float)args.Time;
+            plane.UpdatePropeller(deltatime, shadowSettings.PropellerRpm);
 
             // ----- Input (variable timestep) -----
             HandleInput(deltatime);

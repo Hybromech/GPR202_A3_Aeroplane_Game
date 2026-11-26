@@ -20,6 +20,10 @@ namespace GPR202_Assessment3
     {
         List<VertexData> vertexdata;
         List<uint> indices;
+        private int airframeIndexCount;
+        private int propellerIndexCount;
+        private float propellerAngle;
+        private static readonly Vector3 PropellerPivot = new Vector3(-0.00258f, 1.22923f, 3.4f);
         private readonly List<Vector3> normals = new();
 
         private Vector3 up = Vector3.UnitY;
@@ -313,6 +317,18 @@ namespace GPR202_Assessment3
             up = Vector3.Normalize(Vector3.Cross(right, front));
         }
 
+        public void UpdatePropeller(double deltaSeconds, float revolutionsPerMinute)
+        {
+            propellerAngle = (float)((propellerAngle + deltaSeconds * revolutionsPerMinute * Math.PI / 30.0)
+                % (Math.PI * 2.0));
+        }
+
+        private Matrix4 ComputePropellerMatrix() =>
+            Matrix4.CreateTranslation(-PropellerPivot)
+            * Matrix4.CreateRotationZ(propellerAngle)
+            * Matrix4.CreateTranslation(PropellerPivot)
+            * ComputeModelMatrix();
+
         private Matrix4 ComputeModelMatrix()
         {
             return Matrix4.Identity
@@ -334,7 +350,9 @@ namespace GPR202_Assessment3
             shadowMap.ApplyDepthModel(model);
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indices.Count, DrawElementsType.UnsignedInt, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            shadowMap.ApplyDepthModel(ComputePropellerMatrix());
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
             GL.BindVertexArray(0);
         }
 
@@ -392,7 +410,10 @@ namespace GPR202_Assessment3
             }
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indices.Count, DrawElementsType.UnsignedInt, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            Matrix4 propellerModel = ComputePropellerMatrix();
+            GL.UniformMatrix4(modelLocation, true, ref propellerModel);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
             GL.BindVertexArray(0);
         }
 
@@ -505,27 +526,30 @@ namespace GPR202_Assessment3
             //is imported, loaded into managed memory. Then the unmanaged memory is released, and everything is reset.
             Scene model = importer.ImportFile(fileName, PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals);
 
-            // Load the model data into own structures
             vertexdata = new List<VertexData>();
-            for (int i = 0; i < model.Meshes[0].VertexCount; i++)
-            {
-                VertexData vertex =
-                    new VertexData(model.Meshes[0].Vertices[i].X, model.Meshes[0].Vertices[i].Y, model.Meshes[0].Vertices[i].Z,
-                                       model.Meshes[0].TextureCoordinateChannels[0][i].X, model.Meshes[0].TextureCoordinateChannels[0][i].Y);
-                vertexdata.Add(vertex);
-                var normal = model.Meshes[0].Normals[i];
-                normals.Add(new Vector3(normal.X, normal.Y, normal.Z));
-            }
-
             indices = new List<uint>();
-            for (int i = 0; i < model.Meshes[0].FaceCount; i++)
+            var propellerIndices = new List<uint>();
+            foreach (var mesh in model.Meshes)
             {
-                Assimp.Face face = model.Meshes[0].Faces[i];
-                for (int j = 0; j < face.IndexCount; j++)
+                uint first = (uint)vertexdata.Count;
+                bool isPropeller = mesh.Name.Contains("Propeller", StringComparison.OrdinalIgnoreCase);
+                for (int i = 0; i < mesh.VertexCount; i++)
                 {
-                    indices.Add((uint)face.Indices[j]);
+                    var v = mesh.Vertices[i];
+                    var uv = mesh.TextureCoordinateChannels[0][i];
+                    var n = mesh.Normals[i];
+                    vertexdata.Add(new VertexData(v.X, v.Y, v.Z, uv.X, uv.Y));
+                    normals.Add(new Vector3(n.X, n.Y, n.Z));
                 }
+                var destination = isPropeller ? propellerIndices : indices;
+                foreach (var face in mesh.Faces)
+                    foreach (int index in face.Indices) destination.Add(first + (uint)index);
             }
+            airframeIndexCount = indices.Count;
+            propellerIndexCount = propellerIndices.Count;
+            if (airframeIndexCount == 0 || propellerIndexCount == 0)
+                throw new InvalidDataException("Plane model must contain Airframe and Propeller meshes.");
+            indices.AddRange(propellerIndices);
 
             // Load Texture
             textureHandle = GL.GenTexture();
