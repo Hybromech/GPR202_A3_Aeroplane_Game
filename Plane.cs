@@ -68,6 +68,8 @@ namespace GPR202_Assessment3
             }
         }
 
+        public Matrix4 PhysicsOrientation { get; set; } = Matrix4.CreateRotationY(MathF.PI);
+
         public Vector3 Direction => (position + Front);
 
         private int planeShaderProgram;
@@ -333,9 +335,7 @@ namespace GPR202_Assessment3
         {
             return Matrix4.Identity
                 * Matrix4.CreateScale(scale)
-                * Matrix4.CreateRotationY(rotation.Y)
-                * Matrix4.CreateRotationX(rotation.X)
-                * Matrix4.CreateRotationZ(rotation.Z)
+                * PhysicsOrientation
                 * Matrix4.CreateTranslation(position);
         }
 

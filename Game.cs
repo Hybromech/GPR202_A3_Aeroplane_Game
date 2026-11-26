@@ -16,6 +16,9 @@ namespace GPR202_Assessment3
         private int[] viewport = new int[4];
 
         Camera cam;
+        private readonly FlightSettings flightSettings = new();
+        private FlightPhysics flight = null!;
+        private float pitchInput, rollInput, yawInput;
         Skybox skybox;
         Plane plane;
         Terrain terrain;
@@ -38,12 +41,10 @@ namespace GPR202_Assessment3
         float averageFPS = 0f;
         double currentFPS = 0f;
 
-        private Vector2 _smoothedLook = Vector2.Zero;
-        private const float LookSmoothing = 0.515f;
 
         // Fixed timestep
         private float _accumulator = 0f;
-        private const float FixedDeltaTime = 1f / 60f;
+        private const float FixedDeltaTime = 1f / 120f;
 
         public Game() : base(GameWindowSettings.Default, NativeWindowSettings.Default)
         {
@@ -91,7 +92,10 @@ namespace GPR202_Assessment3
 
             // Place plane safely above terrain at start
             float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
-            plane.position.Y = groundY + 40f;
+            plane.position.Y = groundY + 250f;
+            flight = new FlightPhysics(flightSettings);
+            flight.Reset(plane.position);
+            plane.PhysicsOrientation = flight.Orientation;
 
             shadowSettings = new ShadowSettings();
             ambientLight = new AmbientLight(shadowSettings);
@@ -154,7 +158,7 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+                Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
             }
 
             base.OnUpdateFrame(args);
@@ -170,17 +174,21 @@ namespace GPR202_Assessment3
             // ----- Input (variable timestep) -----
             HandleInput(deltatime);
 
-            float rotY = MathHelper.DegreesToRadians(180.0f + cam.Yaw);
-            plane.SetRotation(new Vector3(0f, rotY, 0f));
-            plane.UpdateVertices();
-
             // ----- Fixed timestep – only movement & balloons -----
-            _accumulator += deltatime;
+            _accumulator += Math.Min(deltatime, 0.1f);
 
             while (_accumulator >= FixedDeltaTime)
             {
-                plane.position -= plane.Right * plane.FlySpeed * FixedDeltaTime;
-                plane.OnFrameUpdate(this.MouseState, viewport[2], viewport[3], FixedDeltaTime);
+                flight.Step(FixedDeltaTime, pitchInput, rollInput, yawInput);
+                if (flight.Position.Y < Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z) + 2f)
+                {
+                    // Simple crash/respawn rather than a ground-contact simulation.
+                    Vector3 restart = flight.Position;
+                    restart.Y = Terrain.GetInterpolatedHeightAtWorld(restart.X, restart.Z) + 250f;
+                    flight.Reset(restart);
+                }
+                plane.position = flight.Position;
+                plane.PhysicsOrientation = flight.Orientation;
 
                 for (int i = m_balloons.Count - 1; i >= 0; i--)
                 {
@@ -200,59 +208,30 @@ namespace GPR202_Assessment3
                 _accumulator -= FixedDeltaTime;
             }
         }
-        private bool firstMove = true;
-        private Vector2 lastPos;
         private void HandleInput(float deltaT)
         {
-            // Keyboard
-            KeyboardState keyboard = KeyboardState;
-            if (keyboard.IsKeyDown(Keys.Escape))
-                Close();
-
-            // Mouse
-            MouseState mouse = this.MouseState;
-            if (firstMove) // this bool variable is initially set to true
-            {
-                lastPos = new Vector2(mouse.X, mouse.Y);
-                firstMove = false;
-            }
-            else
-            {
-                float TurnFactor = ((1.0f / viewport[2]) * mouse.X);
-                float TurnFactorN;
-                float midPoint = 0.5f;
-                if (TurnFactor > 0.5f)
-                {
-                    TurnFactor = 1 - TurnFactor;
-                    TurnFactorN = (1 - ((TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / (1 - midPoint))));
-                }
-                else
-                {
-                    TurnFactorN = (TurnFactor - ((1 - TurnFactor) * TurnFactor)) * (1 / midPoint);
-                }
-
-                float deltaX = ((TurnFactorN - 0.5f) * 2f) * 0.1f;
-
-                //Apply yaw rotation to camera and plane together
-                cam.Yaw -= deltaX * 1f * plane.TurnSpeed * deltaT;
-                plane.Yaw -= deltaX * -1f * plane.TurnSpeed * deltaT;
-            }
+            if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
+            // Cursor displacement is a virtual stick. Up pulls the nose up.
+            pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
+            rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
+            if (MathF.Abs(pitchInput) < 0.05f) pitchInput = 0f;
+            if (MathF.Abs(rollInput) < 0.05f) rollInput = 0f;
+            if (KeyboardState.IsKeyDown(Keys.Up)) pitchInput = 1f;
+            if (KeyboardState.IsKeyDown(Keys.Down)) pitchInput = -1f;
+            if (KeyboardState.IsKeyDown(Keys.Left)) rollInput = -1f;
+            if (KeyboardState.IsKeyDown(Keys.Right)) rollInput = 1f;
+            yawInput = (KeyboardState.IsKeyDown(Keys.D) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.A) ? 1f : 0f);
+            flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
+                * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
 
-            // Compute camera position from plane follow offset
-            Vector3 cam_pos = new Vector3(0f, 0f, 0f);
-            Vector3 cam_dir = new Vector3(cam.Yaw, 20.0f, 0.0f);
-            float distance = 11.0f;
-            cam_pos.X = (float)(distance * -Math.Sin(cam_dir.X * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
-            cam_pos.Y = (float)(distance * -Math.Sin((cam_dir.Y) * (Math.PI / 180)));
-            cam_pos.Z = (float)(-distance * Math.Cos((cam_dir.X) * (Math.PI / 180)) * Math.Cos((cam_dir.Y) * (Math.PI / 180)));
-
-            Vector3 camWorldPos = plane.GetPosition() - cam_pos;
-            Matrix4 view = Matrix4.LookAt(camWorldPos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
+            Vector3 camWorldPos = plane.position - flight.Forward * 20f + flight.Up * 6f;
+            Matrix4 view = Matrix4.LookAt(camWorldPos, plane.position + flight.Forward * 8f, flight.Up);
+            cam.AspectRatio = (float)FramebufferSize.X / FramebufferSize.Y;
             Matrix4 proj = cam.GetProjectionMatrix();
 
             gpuTimings.Collect(shadowSettings.GpuTimingEnabled);
