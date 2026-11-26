@@ -15,6 +15,8 @@ namespace GPR202_Assessment3
         public float PitchAuthority { get; set; } = 1.5f;
         // Roll angular acceleration coefficient; scaled by airspeed and opposed by damping.
         public float RollAuthority { get; set; } = 3.0f;
+        // Maximum absolute bank relative to the horizon.
+        public float MaxBankAngleDegrees { get; set; } = 90f;
         public float YawAuthority { get; set; } = 0.6f;
         public float StartSpeed { get; set; } = 85f;
     }

@@ -79,7 +79,21 @@ namespace GPR202_Assessment3
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
                 * Matrix4.CreateRotationY(rates.Y*dt)
                 * Matrix4.CreateRotationZ(rates.Z*dt) * Orientation;
-            // Remove accumulated numerical drift without constraining pitch or bank.
+            // Clamp horizon-relative bank while preserving acceleration inside the limit.
+            // Bank is undefined at vertical pitch, so skip correction there.
+            float horizonRight = Right.Y, horizonUp = Up.Y;
+            if (horizonRight*horizonRight + horizonUp*horizonUp > 0.0001f)
+            {
+                float bank = MathF.Atan2(horizonRight, horizonUp);
+                float limit = MathHelper.DegreesToRadians(Math.Clamp(settings.MaxBankAngleDegrees, 0f, 90f));
+                float boundedBank = Math.Clamp(bank, -limit, limit);
+                if (bank != boundedBank)
+                {
+                    Orientation = Matrix4.CreateRotationZ(boundedBank-bank) * Orientation;
+                    if (rates.Z * bank > 0f) rates.Z = 0f;
+                }
+            }
+            // Remove accumulated numerical drift.
             forward = Vector3.Normalize(Forward);
             right = Vector3.Normalize(Vector3.Cross(Up, forward));
             up = Vector3.Normalize(Vector3.Cross(forward, right));

@@ -12,4 +12,6 @@ Run deterministic physics checks with:
 
     dotnet run --project tests/FlightChecks/FlightChecks.csproj -c Release
 
-Mouse horizontal position controls roll acceleration. Holding left/right continues rolling, with airspeed-dependent authority and damping. RollAuthority (default 3) tunes acceleration rather than a target angle or fixed roll speed.
+Mouse horizontal position controls roll acceleration. Holding left/right rolls up to the bank limit, with airspeed-dependent authority and damping. RollAuthority (default 3) tunes acceleration rather than a target angle or fixed roll speed.
+
+MaxBankAngleDegrees limits bank to plus/minus 90 degrees by default. At the limit outward roll stops; opposite input rolls back immediately with acceleration. Centring still damps roll without auto-levelling. Horizon-relative limiting pauses near vertical pitch, where bank is undefined.
