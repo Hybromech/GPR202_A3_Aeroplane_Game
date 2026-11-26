@@ -22,6 +22,7 @@ namespace GPR202_Assessment3
         private int modelLocation;
         private int viewLocation;
         private int projectionLocation;
+        private int bloomThresholdLocation, bloomIntensityLocation;
 
         private readonly string vertexShaderCode =
             @"
@@ -50,11 +51,15 @@ namespace GPR202_Assessment3
                 in vec2 texCoord;
 
                 uniform sampler2D texture0;
+                uniform float uBloomThreshold;
+                uniform float uBloomIntensity;
 
                 void main()
                 {
                     vec4 texColor = texture(texture0, texCoord);
-                    pixelColor = texColor;
+                    float luminance = dot(texColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+                    float highlight = smoothstep(uBloomThreshold, uBloomThreshold + 0.1, luminance);
+                    pixelColor = vec4(texColor.rgb * (1.0 + highlight * uBloomIntensity), texColor.a);
                 }
             ";
 
@@ -64,7 +69,7 @@ namespace GPR202_Assessment3
             Setup();
         }
 
-        public void Draw(Vector3 pos, Vector3 rot, float scale, Matrix4 view, Matrix4 proj)
+        public void Draw(Vector3 pos, Vector3 rot, float scale, Matrix4 view, Matrix4 proj, ShadowSettings settings)
         {
             this.position = pos;
             this.rotation = rot;
@@ -73,6 +78,11 @@ namespace GPR202_Assessment3
             model = Matrix4.Identity * Matrix4.CreateScale(scale) * Matrix4.CreateRotationX(rotation.X) * Matrix4.CreateRotationY(rotation.Y) * Matrix4.CreateTranslation(position);
 
             GL.UseProgram(balloonShaderProgram);
+
+            bool bloomActive = settings.BloomEnabled && settings.BloomStrength > 0f
+                && settings.BalloonBloomEnabled;
+            GL.Uniform1(bloomThresholdLocation, Math.Max(0f, settings.BalloonBloomThreshold));
+            GL.Uniform1(bloomIntensityLocation, bloomActive ? Math.Max(0f, settings.BalloonBloomIntensity) : 0f);
 
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation.
             GL.UniformMatrix4(modelLocation, true, ref model);
@@ -137,6 +147,8 @@ namespace GPR202_Assessment3
             modelLocation = GL.GetUniformLocation(balloonShaderProgram, "model");
             viewLocation = GL.GetUniformLocation(balloonShaderProgram, "view");
             projectionLocation = GL.GetUniformLocation(balloonShaderProgram, "projection");
+            bloomThresholdLocation = GL.GetUniformLocation(balloonShaderProgram, "uBloomThreshold");
+            bloomIntensityLocation = GL.GetUniformLocation(balloonShaderProgram, "uBloomIntensity");
 
             GL.UseProgram(balloonShaderProgram);
         }

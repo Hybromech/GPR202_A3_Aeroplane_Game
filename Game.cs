@@ -278,7 +278,7 @@ namespace GPR202_Assessment3
             // Draw Balloons
             for (int i = 0; i < m_balloons.Count; i++)
             {
-                balloon.Draw(m_balloons[i].position, m_balloons[i].rotation, m_balloons[i].scale, view, proj);
+                balloon.Draw(m_balloons[i].position, m_balloons[i].rotation, m_balloons[i].scale, view, proj, shadowSettings);
             }
 
             // Draw Terrain with Directional Lighting & Shadows

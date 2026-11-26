@@ -12,6 +12,11 @@ namespace GPR202_Assessment3
         public int BloomDownsample { get; set; } = 2;
         public int BloomBlurIterations { get; set; } = 5;
 
+        // Balloon highlights feeding the shared bloom pass.
+        public bool BalloonBloomEnabled { get; set; } = true;
+        public float BalloonBloomThreshold { get; set; } = 0.2f;
+        public float BalloonBloomIntensity { get; set; } = 5.0f;
+
         // Plane metallic material: high metalness and moderately polished finish.
         public float PlaneMetalness { get; set; } = 0.9f;
         public float PlaneRoughness { get; set; } = 0.25f;
