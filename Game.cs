@@ -248,14 +248,14 @@ namespace GPR202_Assessment3
                         if (balloons_left == 0)
                         {
                             planeMaterial.VictoryGold = true;
-                            fireworks.Start();
+                            fireworks.Start(Terrain.width, Terrain.length, Terrain.GetInterpolatedHeightAtWorld);
                             audio?.SetVictory(true);
                         }
                         Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
                     }
                 }
 
-                fireworks.Update(FixedDeltaTime, plane.position, flight.Forward, flight.Velocity);
+                fireworks.Update(FixedDeltaTime);
                 plane.UpdatePropeller(FixedDeltaTime, shadowSettings.PropellerRpm * flight.PropellerSpeedFraction);
                 _accumulator -= FixedDeltaTime;
             }
