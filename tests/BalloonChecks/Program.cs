@@ -1,0 +1,5 @@
+using GPR_Command;using GPR202_Assessment3;using OpenTK.Mathematics;using System.Reflection;
+typeof(Terrain).GetField("heightmapFlat",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,new float[2048*2048]);
+BalloonState.random=new Random(42);var b=new BalloonState();b.Spawn();var origin=b.SpawnPosition;bool moved=false;
+for(int i=0;i<36000;i++){var last=b.position;b.Update(new Vector3(10000),1f/60);if((b.position-origin).Length>Balloon.WanderRadius+0.001)throw new Exception("Outside spawn radius");if((b.position-last).Length>Balloon.WanderSpeed/60+0.001)throw new Exception("Speed bound");moved|=(b.position-origin).Length>1;}
+if(!moved)throw new Exception("No wandering");b.Update(b.position+new Vector3(0,5,0),0);if(!b.collected)throw new Exception("Collection must use moving position");bool removed=false;for(int i=0;i<60;i++)removed|=b.Update(Vector3.Zero,1f/60);if(!removed)throw new Exception("Pop animation broken");b.Spawn();if(b.collected||b.position!=b.SpawnPosition)throw new Exception("Spawn must reset motion");Console.WriteLine("PASS 10-minute bounded wander/speed, moving collection, pop and respawn.");

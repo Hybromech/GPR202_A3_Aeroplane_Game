@@ -21,6 +21,10 @@ namespace GPR_Command
         public bool collected;
         public float animate;
         public float scale;
+        public Vector3 SpawnPosition { get; private set; }
+        private double wanderTime;
+        private float wanderPhase;
+
 
         
 
@@ -40,16 +44,44 @@ namespace GPR_Command
             float balloon_h = random.Next(15, 65);
 
             position = Terrain.WorldPositionFromHeightMap(position_x, position_z) + new Vector3(0f, balloon_h, 0f);
+            SpawnPosition = position;
+            wanderTime = 0;
+            wanderPhase = random.NextSingle() * MathF.Tau;
             rotation = new Vector3(0f, random.Next(0, 359), 0f);
             collected = false;
             animate = 0f;
             scale = DEFAULT_SCALE;
         }
 
+        private void UpdateWander(float dt)
+        {
+            float radius = Math.Max(0f, Balloon.WanderRadius);
+            float speed = Math.Max(0f, Balloon.WanderSpeed);
+            wanderTime += dt;
+            double t = wanderTime * speed / Math.Max(1f, radius);
+            // Independent phases avoid synchronized motion; intersecting slow waves resemble drifting wind.
+            Vector3 offset = new Vector3(
+                (float)Math.Sin(t + wanderPhase)*radius*0.65f,
+                (float)Math.Sin(wanderTime*Math.Tau/Math.Max(0.1f,Balloon.BobPeriod)+wanderPhase)*Math.Max(0f,Balloon.BobHeight),
+                (float)Math.Sin(t*0.73 + wanderPhase*1.7f)*radius*0.65f);
+            if(offset.LengthSquared>radius*radius && offset.LengthSquared>0f) offset=offset.Normalized()*radius;
+            Vector3 target=SpawnPosition+offset;
+            target.X=Math.Clamp(target.X,-Terrain.width/2f,Terrain.width/2f-1f);
+            target.Z=Math.Clamp(target.Z,-Terrain.length/2f,Terrain.length/2f-1f);
+            Vector3 movement=target-position;
+            float maxMove=speed*dt;
+            if(movement.LengthSquared>maxMove*maxMove && movement.LengthSquared>0f) movement=movement.Normalized()*maxMove;
+            Vector3 candidate=position+movement;
+            // Stay above mountains rather than jumping upward or leaving the spawn radius.
+            if(candidate.Y >= Terrain.GetInterpolatedHeightAtWorld(candidate.X,candidate.Z)+Math.Max(0f,Balloon.GroundClearance))
+                position=candidate;
+        }
+
         public bool Update(Vector3 playerpos, float deltaT)
         {
             if (collected == false)
             {
+                UpdateWander(Math.Max(0f, deltaT));
                 rotation += new Vector3(0f, deltaT * ROTATE_SPEED, 0f);
 
                 // PERFORMANCE OPTIMIZATION: Use DistanceSquared to avoid expensive square root 

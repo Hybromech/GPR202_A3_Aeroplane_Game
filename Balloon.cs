@@ -11,6 +11,13 @@ namespace GPR202_Assessment3
 {
     public class Balloon : GameObject
     {
+        // Shared movement tuning for all uncollected balloons (world units/seconds).
+        public static float WanderRadius { get; set; } = 30f;
+        public static float WanderSpeed { get; set; } = 3f;
+        public static float BobHeight { get; set; } = 3f;
+        public static float BobPeriod { get; set; } = 5f;
+        public static float GroundClearance { get; set; } = 8f;
+
         private List<VertexData> vertexdata;
         private List<uint> indices;
 

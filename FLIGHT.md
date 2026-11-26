@@ -35,3 +35,5 @@ Crashes leave an irregular, feathered charred patch on the terrain (18-unit radi
 Collect all eight balloons to win: the full plane (including propeller) switches to a solid gold metallic material with low roughness, and victory music replaces the background track. Normal shading still applies to the gold. Restart clears the reward without modifying the configured normal material.
 
 Victory continuously launches coloured fireworks across all 16 regions of the map, 100–200 units above local terrain. A new burst launches every 0.15 seconds using a fixed pool of 24 particle systems. The celebration lasts until a crash/restart or closing the game; individual sparks still fade naturally.
+
+Uncollected balloons drift and bob around their original spawn positions. Tune shared static settings at the top of Balloon.cs: WanderRadius (30 world units, total 3D bound), WanderSpeed (3 units/second maximum), BobHeight (3), BobPeriod (5 seconds), and GroundClearance (8). Random phases vary their motion; movement pauses at terrain obstacles and stops when collected. Spawn/reset establishes a new anchor.
