@@ -13,6 +13,8 @@ namespace GPR202_Assessment3
     public class Game : GameWindow
     {
         private Stopwatch timer;
+        private readonly AudioSettings audioSettings = new();
+        private GameAudio? audio;
         private int[] viewport = new int[4];
 
         Camera cam;
@@ -113,6 +115,7 @@ namespace GPR202_Assessment3
 
             // Start a New Game
             SetupNewGame();
+            audio = new GameAudio(audioSettings);
 
             base.OnLoad();
         }
@@ -131,6 +134,7 @@ namespace GPR202_Assessment3
 
         protected override void OnUnload()
         {
+            audio?.Dispose();
             timer.Stop();
             mountainBillboard?.Dispose();
             gpuTimings.Dispose();
@@ -163,6 +167,7 @@ namespace GPR202_Assessment3
 
             base.OnUpdateFrame(args);
 
+            audio?.Update(flight.Throttle, IsFocused);
             if (!IsFocused)
             {
                 return;
@@ -201,6 +206,7 @@ namespace GPR202_Assessment3
                     else if (m_balloons[i].collected != wasCollected)
                     {
                         balloons_left--;
+                        audio?.PlayBalloonPop();
                         Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
                     }
                 }
