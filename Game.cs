@@ -115,7 +115,7 @@ namespace GPR202_Assessment3
 
             // Directional Light & Shadow Settings / Shadow Map
             sunLight = new DirectionalLight(
-                direction: new Vector3(-0.92f, -0.24f, -0.30f),
+                direction: -Skybox.SunDirection,
                 ambient: Vector3.Zero,
                 diffuse: new Vector3(0.95f, 0.92f, 0.85f),
                 specular: new Vector3(0.25f, 0.25f, 0.25f)

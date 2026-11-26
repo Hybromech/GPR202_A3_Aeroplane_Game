@@ -12,6 +12,11 @@ namespace GPR202_Assessment3
 {
     public class Skybox
     {
+        // Visible sun centre in left.jpg (-X cube face), measured at UV (0.6822, 0.2800).
+        // Images load without vertical flipping: -X maps to (-1, 1-2v, 2u-1).
+        // This points TOWARD the sun; directional lighting uses the opposite ray direction.
+        public static Vector3 SunDirection => Vector3.Normalize(new Vector3(-1f, 0.4400f, 0.3644f));
+
         private float[] skyboxVertices = {
 	        // positions          
 	        -1.0f,  1.0f, -1.0f,
