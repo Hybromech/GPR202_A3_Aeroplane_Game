@@ -211,7 +211,7 @@ namespace GPR202_Assessment3
         private void HandleInput(float deltaT)
         {
             if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
-            // Cursor displacement is a virtual stick. Up pulls the nose up.
+            // Cursor displacement is a virtual stick; pitch and rudder are inverted below.
             pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
             rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
             if (MathF.Abs(pitchInput) < 0.05f) pitchInput = 0f;
@@ -221,6 +221,8 @@ namespace GPR202_Assessment3
             if (KeyboardState.IsKeyDown(Keys.Left)) rollInput = -1f;
             if (KeyboardState.IsKeyDown(Keys.Right)) rollInput = 1f;
             yawInput = (KeyboardState.IsKeyDown(Keys.D) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.A) ? 1f : 0f);
+            pitchInput = -pitchInput;
+            yawInput = -yawInput;
             flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
                 * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
         }
@@ -229,7 +231,7 @@ namespace GPR202_Assessment3
         {
             if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
 
-            Vector3 camWorldPos = plane.position - flight.Forward * 20f + flight.Up * 6f;
+            Vector3 camWorldPos = plane.position - flight.Forward * 15f + flight.Up * 4.5f;
             Matrix4 view = Matrix4.LookAt(camWorldPos, plane.position + flight.Forward * 8f, flight.Up);
             cam.AspectRatio = (float)FramebufferSize.X / FramebufferSize.Y;
             Matrix4 proj = cam.GetProjectionMatrix();
