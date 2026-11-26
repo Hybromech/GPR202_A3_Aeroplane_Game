@@ -1,0 +1,5 @@
+# Visual Studio workspace settings
+.vs/
+
+# .NET intermediate build output
+obj/
