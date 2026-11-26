@@ -4,6 +4,10 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        public bool GpuTimingEnabled { get; set; } = true;
+        // Narrower 3x3 terrain kernel; false restores the wider tapered filter.
+        public bool TerrainFastShadows { get; set; } = true;
+
         public bool TerrainLodEnabled { get; set; } = true;
         public float TerrainLodNearDistance { get; set; } = 250f;
         public float TerrainLodMediumDistance { get; set; } = 600f;

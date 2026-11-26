@@ -39,6 +39,7 @@ namespace GPR202_Assessment3
         private int pcfSpreadLocation;
         private int softEdgeRangeLocation;
         private int shadowStrengthLocation;
+        private int fastShadowLocation;
 
         string vertexShaderCode =
             @"
@@ -97,6 +98,7 @@ namespace GPR202_Assessment3
                 uniform float uPcfSpread;
                 uniform float uSoftEdgeRange;
                 uniform float uShadowStrength;
+                uniform bool uFastShadows;
 
                 float CompareShadowTexel(ivec2 texel, float receiverDepth)
                 {
@@ -159,6 +161,20 @@ namespace GPR202_Assessment3
                     return shadow / 16.0;
                 }
 
+                float CompactShadow(vec2 uv, float receiverDepth)
+                {
+                    vec2 position = uv * vec2(textureSize(shadowMap, 0)) - vec2(0.5);
+                    ivec2 first = ivec2(floor(position)) - ivec2(1);
+                    vec2 f = fract(position);
+                    float wx[4] = float[](1.0-f.x, 1.0, 1.0, f.x);
+                    float wy[4] = float[](1.0-f.y, 1.0, 1.0, f.y);
+                    float result = 0.0;
+                    for (int y=0; y<4; y++)
+                    for (int x=0; x<4; x++)
+                        result += wx[x]*wy[y]*CompareShadowTexel(first+ivec2(x,y), receiverDepth);
+                    return result / 9.0;
+                }
+
                 float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
                     if (uShadowStrength <= 0.0) return 0.0;
@@ -171,6 +187,17 @@ namespace GPR202_Assessment3
                     }
 
                     float bias = max(uSlopeBiasScale * (1.0 - dot(norm, lightDir)), uMinBias);
+                    if (uFastShadows)
+                    {
+                        if (uPcfSpread == 1.0)
+                            return CompactShadow(projCoords.xy, projCoords.z - bias) * uShadowStrength;
+                        vec2 stepSize = vec2(uPcfSpread) / vec2(textureSize(shadowMap, 0));
+                        float result = 0.0;
+                        for (int y=-1; y<=1; y++)
+                        for (int x=-1; x<=1; x++)
+                            result += FilteredShadow(projCoords.xy + vec2(x,y)*stepSize, projCoords.z-bias);
+                        return result / 9.0 * uShadowStrength;
+                    }
                     // Exact unit spacing is required for the shared 6x6 footprint.
                     // Keep the general filter for all other configurable spreads.
                     if (uPcfSpread == 1.0)
@@ -286,6 +313,7 @@ namespace GPR202_Assessment3
                 }
 
                 ShadowSettings cfg = shadowMap.Settings;
+                GL.Uniform1(fastShadowLocation, cfg.TerrainFastShadows ? 1 : 0);
                 if (slopeBiasScaleLocation != -1) GL.Uniform1(slopeBiasScaleLocation, cfg.TerrainSlopeBiasScale);
                 if (minBiasLocation != -1) GL.Uniform1(minBiasLocation, cfg.TerrainMinBias);
                 if (pcfSpreadLocation != -1) GL.Uniform1(pcfSpreadLocation, cfg.TerrainPcfSpread);
@@ -578,6 +606,7 @@ namespace GPR202_Assessment3
             pcfSpreadLocation = GL.GetUniformLocation(terrainShaderProgram, "uPcfSpread");
             softEdgeRangeLocation = GL.GetUniformLocation(terrainShaderProgram, "uSoftEdgeRange");
             shadowStrengthLocation = GL.GetUniformLocation(terrainShaderProgram, "uShadowStrength");
+            fastShadowLocation = GL.GetUniformLocation(terrainShaderProgram, "uFastShadows");
         }
 
         private void CreateChunks()

@@ -26,6 +26,7 @@ namespace GPR202_Assessment3
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
         private Bloom bloom = null!;
+        private readonly GpuTimings gpuTimings = new();
         private BillBoard mountainBillboard = null!;
 
         public const int balloons_total = 8;
@@ -128,6 +129,7 @@ namespace GPR202_Assessment3
         {
             timer.Stop();
             mountainBillboard?.Dispose();
+            gpuTimings.Dispose();
             bloom?.Dispose();
             shadowMap?.Dispose();
             base.OnUnload();
@@ -252,17 +254,21 @@ namespace GPR202_Assessment3
             Matrix4 view = Matrix4.LookAt(camWorldPos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
             Matrix4 proj = cam.GetProjectionMatrix();
 
+            gpuTimings.Collect(shadowSettings.GpuTimingEnabled);
             terrain.UpdateLod(camWorldPos, shadowSettings);
 
             // --- PASS 1: Shadow Depth Pass (centered around plane) ---
+            gpuTimings.Begin("Shadow depth", shadowSettings.GpuTimingEnabled);
             shadowMap.BeginPass(sunLight, plane.GetPosition());
 
             terrain.DrawDepth(shadowMap);
             plane.DrawDepth(shadowMap);
 
             shadowMap.EndPass(viewport[2], viewport[3]);
+            gpuTimings.End();
 
             // --- PASS 2: HDR scene for bloom ---
+            gpuTimings.Begin("Scene setup + sky", shadowSettings.GpuTimingEnabled);
             bloom.BeginScene(FramebufferSize.X, FramebufferSize.Y);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
@@ -273,22 +279,32 @@ namespace GPR202_Assessment3
             GL.DepthFunc(DepthFunction.Lequal);
             skybox.Draw(view, proj);
             GL.DepthFunc(DepthFunction.Less);
+            gpuTimings.End();
 
             // Draw Plane with Directional Lighting & Shadows
+            gpuTimings.Begin("Plane", shadowSettings.GpuTimingEnabled);
             plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
+            gpuTimings.End();
 
+            gpuTimings.Begin("Balloons", shadowSettings.GpuTimingEnabled);
             // Draw Balloons
             for (int i = 0; i < m_balloons.Count; i++)
             {
                 balloon.Draw(m_balloons[i].position, m_balloons[i].rotation, m_balloons[i].scale, view, proj, shadowSettings);
             }
 
+            gpuTimings.End();
+
             // Draw Terrain with Directional Lighting & Shadows
+            gpuTimings.Begin("Terrain + billboard", shadowSettings.GpuTimingEnabled);
             terrain.Draw(view, proj, sunLight, camWorldPos, ambientLight, shadowMap);
 
             mountainBillboard.Draw(view, proj, camWorldPos);
+            gpuTimings.End();
 
+            gpuTimings.Begin("Bloom", shadowSettings.GpuTimingEnabled);
             bloom.EndScene();
+            gpuTimings.End();
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);
         }

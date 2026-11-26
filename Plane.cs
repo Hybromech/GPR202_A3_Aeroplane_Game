@@ -171,6 +171,20 @@ namespace GPR202_Assessment3
                     return mix(bottom, top, weight.y);
                 }
 
+                float CompactShadow(vec2 uv, float receiverDepth)
+                {
+                    vec2 position = uv * vec2(textureSize(shadowMap, 0)) - vec2(0.5);
+                    ivec2 first = ivec2(floor(position)) - ivec2(1);
+                    vec2 f = fract(position);
+                    float wx[4] = float[](1.0-f.x, 1.0, 1.0, f.x);
+                    float wy[4] = float[](1.0-f.y, 1.0, 1.0, f.y);
+                    float result = 0.0;
+                    for (int y=0; y<4; y++)
+                    for (int x=0; x<4; x++)
+                        result += wx[x]*wy[y]*CompareShadowTexel(first+ivec2(x,y), receiverDepth);
+                    return result / 9.0;
+                }
+
                 float ComputeShadow(vec4 lsPos, vec3 lightDir)
                 {
                     if (uShadowStrength <= 0.0) return 0.0;
@@ -181,6 +195,8 @@ namespace GPR202_Assessment3
                     {
                         return 0.0;
                     }
+
+                    if (uPcfSpread == 1.0) return CompactShadow(projCoords.xy, projCoords.z - uBias);
 
                     vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
