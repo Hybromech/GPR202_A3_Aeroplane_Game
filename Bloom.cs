@@ -11,7 +11,7 @@ namespace GPR202_Assessment3
         private readonly int[] targets = new int[3];
         private readonly int[] textures = new int[3];
         private int depth, vao, extract, blur, composite;
-        private int thresholdLocation, directionLocation, strengthLocation;
+        private int thresholdLocation, directionLocation, strengthLocation, vignetteLocation;
         private int width, height, blurWidth, blurHeight, downsample;
         private bool bypass;
         private bool disposed;
@@ -53,9 +53,12 @@ namespace GPR202_Assessment3
             uniform sampler2D source;
             uniform sampler2D glow;
             uniform float strength;
+            uniform float vignetteStrength;
             void main() {
                 vec4 scene = texture(source, uv);
-                color = vec4(scene.rgb + texture(glow, uv).rgb * strength, scene.a);
+                float edge = smoothstep(0.45, 1.4, length(uv * 2.0 - 1.0));
+                float vignette = 1.0 - vignetteStrength * edge;
+                color = vec4((scene.rgb + texture(glow, uv).rgb * strength) * vignette, scene.a);
             }";
 
         public Bloom(ShadowSettings settings)
@@ -70,6 +73,7 @@ namespace GPR202_Assessment3
                 thresholdLocation = GL.GetUniformLocation(extract, "threshold");
                 directionLocation = GL.GetUniformLocation(blur, "direction");
                 strengthLocation = GL.GetUniformLocation(composite, "strength");
+                vignetteLocation = GL.GetUniformLocation(composite, "vignetteStrength");
                 foreach (int program in new[] { extract, blur, composite })
                 {
                     GL.UseProgram(program);
@@ -85,7 +89,8 @@ namespace GPR202_Assessment3
         public void BeginScene(int framebufferWidth, int framebufferHeight)
         {
             if (disposed) throw new ObjectDisposedException(nameof(Bloom));
-            bypass = !settings.BloomEnabled || settings.BloomStrength <= 0f;
+            bypass = (!settings.BloomEnabled || settings.BloomStrength <= 0f)
+                && (!settings.VignetteEnabled || settings.VignetteStrength <= 0f);
             if (bypass)
             {
                 GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -133,6 +138,7 @@ namespace GPR202_Assessment3
                 GL.Viewport(0, 0, width, height);
                 GL.UseProgram(composite);
                 GL.Uniform1(strengthLocation, strength);
+                GL.Uniform1(vignetteLocation, settings.VignetteEnabled ? Math.Clamp(settings.VignetteStrength, 0f, 1f) : 0f);
                 GL.ActiveTexture(TextureUnit.Texture1);
                 GL.BindTexture(TextureTarget.Texture2D, strength > 0f ? textures[1] : textures[0]);
                 Pass(0, textures[0]);

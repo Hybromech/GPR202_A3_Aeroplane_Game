@@ -4,6 +4,8 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        public bool VignetteEnabled { get; set; } = true;
+        public float VignetteStrength { get; set; } = 0.65f;
         // Full-throttle visual RPM; idle fraction is in FlightSettings.
         public float PropellerRpm { get; set; } = 400f;
 
