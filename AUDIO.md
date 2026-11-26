@@ -9,3 +9,5 @@ The engine loops continuously and smoothly changes pitch and level with throttle
 Run automated checks: dotnet run --project tests/AudioChecks/AudioChecks.csproj -c Release
 
 StallWarningVolume controls a pulsing tone that grows as angle of attack approaches stall.
+
+ExplosionVolume controls the crash blast. Engine and stall-warning audio stop on impact; the soundtrack continues during the three-second restart sequence.

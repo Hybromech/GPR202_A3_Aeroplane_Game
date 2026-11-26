@@ -15,6 +15,11 @@ namespace GPR202_Assessment3
         private Stopwatch timer;
         private readonly AudioSettings audioSettings = new();
         private GameAudio? audio;
+        private readonly ParticleSystem explosion = new();
+        private ParticleRenderer? particleRenderer;
+        private bool crashed;
+        private float crashTime;
+        private Vector3 initialSpawn;
         private Vector3 smoothCamera, smoothTarget;
         private bool cameraReady;
         private double cameraTime;
@@ -99,6 +104,7 @@ namespace GPR202_Assessment3
             float groundY = Terrain.GetInterpolatedHeightAtWorld(plane.position.X, plane.position.Z);
             plane.position.Y = groundY + 250f;
             flight = new FlightPhysics(flightSettings);
+            initialSpawn = plane.position;
             flight.Reset(plane.position);
             plane.PhysicsOrientation = flight.Orientation;
 
@@ -119,6 +125,7 @@ namespace GPR202_Assessment3
             // Start a New Game
             SetupNewGame();
             audio = new GameAudio(audioSettings);
+            particleRenderer = new ParticleRenderer();
 
             base.OnLoad();
         }
@@ -137,6 +144,7 @@ namespace GPR202_Assessment3
 
         protected override void OnUnload()
         {
+            particleRenderer?.Dispose();
             audio?.Dispose();
             timer.Stop();
             mountainBillboard?.Dispose();
@@ -149,7 +157,7 @@ namespace GPR202_Assessment3
         protected override void OnMouseWheel(MouseWheelEventArgs e)
         {
             base.OnMouseWheel(e);
-            if (!IsFocused || flight is null) return;
+            if (!IsFocused || flight is null || crashed) return;
             flight.Throttle = Math.Clamp(flight.Throttle + e.OffsetY * flightSettings.ThrottleWheelStep, 0f, 1f);
         }
 
@@ -172,12 +180,12 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Title = $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+                Title = crashed ? "Crashed! Restarting..." : $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
             }
 
             base.OnUpdateFrame(args);
 
-            audio?.Update(flight.EnginePower, IsFocused, flight.StallWarning);
+            audio?.Update(flight.EnginePower, IsFocused, crashed ? 0f : flight.StallWarning, !crashed);
             if (!IsFocused)
             {
                 return;
@@ -187,21 +195,34 @@ namespace GPR202_Assessment3
 
 
             // ----- Input (variable timestep) -----
-            HandleInput(deltatime);
+            if (crashed) { if (KeyboardState.IsKeyDown(Keys.Escape)) Close(); }
+            else HandleInput(deltatime);
 
             // ----- Fixed timestep – only movement & balloons -----
             _accumulator += Math.Min(deltatime, 0.1f);
 
             while (_accumulator >= FixedDeltaTime)
             {
+                if (crashed)
+                {
+                    explosion.Update(FixedDeltaTime);
+                    crashTime += FixedDeltaTime;
+                    _accumulator -= FixedDeltaTime;
+                    if (crashTime >= 3f) RestartAfterCrash();
+                    continue;
+                }
                 flight.Step(FixedDeltaTime, pitchInput, rollInput, yawInput);
                 if (flight.Position.Y < Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z) + 2f)
                 {
-                    // Simple crash/respawn rather than a ground-contact simulation.
-                    Vector3 restart = flight.Position;
-                    restart.Y = Terrain.GetInterpolatedHeightAtWorld(restart.X, restart.Z) + 250f;
-                    flight.Reset(restart);
-                    cameraReady = false;
+                    crashed = true;
+                    crashTime = 0f;
+                    plane.position = flight.Position;
+                    explosion.Explode(plane.position + Vector3.UnitY*2f);
+                    audio?.Update(0f, true, 0f, false);
+                    audio?.PlayExplosion();
+                    Title = "Crashed! Restarting...";
+                    _accumulator -= FixedDeltaTime;
+                    continue;
                 }
                 plane.position = flight.Position;
                 plane.PhysicsOrientation = flight.Orientation;
@@ -226,6 +247,20 @@ namespace GPR202_Assessment3
                 _accumulator -= FixedDeltaTime;
             }
         }
+        private void RestartAfterCrash()
+        {
+            crashed = false;
+            crashTime = 0f;
+            explosion.Clear();
+            flight.Reset(initialSpawn);
+            plane.position = flight.Position;
+            plane.PhysicsOrientation = flight.Orientation;
+            pitchInput = rollInput = yawInput = 0f;
+            _accumulator = 0f;
+            cameraReady = false;
+            SetupNewGame();
+        }
+
         private void HandleInput(float deltaT)
         {
             if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
@@ -255,6 +290,7 @@ namespace GPR202_Assessment3
             // Follow heading and pitch without inheriting aircraft bank.
             Vector3 camWorldPos = plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
             Vector3 cameraTarget = plane.position + flight.Forward * 8f;
+            if (crashed) { camWorldPos = plane.position + new Vector3(0f, 18f, 30f); cameraTarget = plane.position + Vector3.UnitY*4f; }
             float cameraBlend = 1f - MathF.Exp(-flightSettings.CameraFollowSpeed * (float)Math.Min(args.Time, 0.1));
             if (!cameraReady) { smoothCamera = camWorldPos; smoothTarget = cameraTarget; cameraReady = true; }
             smoothCamera = Vector3.Lerp(smoothCamera, camWorldPos, cameraBlend);
@@ -262,7 +298,7 @@ namespace GPR202_Assessment3
             camWorldPos = smoothCamera;
             cameraTarget = smoothTarget;
             cameraTime += args.Time;
-            float shake = flight.StallWarning * flightSettings.StallShakeAmount;
+            float shake = (crashed ? 0f : flight.StallWarning) * flightSettings.StallShakeAmount;
             camWorldPos += new Vector3((float)Math.Sin(cameraTime*73), (float)Math.Sin(cameraTime*91), 0f) * shake;
             Vector3 viewDirection = Vector3.Normalize(cameraTarget - camWorldPos);
             // Avoid a degenerate LookAt when looking almost straight up or down.
@@ -280,7 +316,7 @@ namespace GPR202_Assessment3
             shadowMap.BeginPass(sunLight, plane.GetPosition());
 
             terrain.DrawDepth(shadowMap);
-            plane.DrawDepth(shadowMap);
+            if (!crashed) plane.DrawDepth(shadowMap);
 
             shadowMap.EndPass(viewport[2], viewport[3]);
             gpuTimings.End();
@@ -301,7 +337,7 @@ namespace GPR202_Assessment3
 
             // Draw Plane with Directional Lighting & Shadows
             gpuTimings.Begin("Plane", shadowSettings.GpuTimingEnabled);
-            plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
+            if (!crashed) plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
             gpuTimings.End();
 
             gpuTimings.Begin("Balloons", shadowSettings.GpuTimingEnabled);
@@ -319,6 +355,8 @@ namespace GPR202_Assessment3
 
             mountainBillboard.Draw(view, proj, camWorldPos);
             gpuTimings.End();
+
+            particleRenderer?.Draw(explosion, view, proj, FramebufferSize.Y);
 
             gpuTimings.Begin("Bloom", shadowSettings.GpuTimingEnabled);
             bloom.EndScene();

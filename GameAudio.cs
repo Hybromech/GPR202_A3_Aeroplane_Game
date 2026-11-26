@@ -25,13 +25,15 @@ public sealed class GameAudio : IDisposable
             Dispose();
         }
     }
-    public void Update(float throttle, bool focused, float stallWarning = 0f)
+    public void Update(float throttle, bool focused, float stallWarning = 0f, bool engineRunning = true)
     {
         mix.Throttle = Math.Clamp(throttle, 0f, 1f);
         mix.Focused = focused;
+        mix.EngineRunning = engineRunning;
         mix.StallWarning = Math.Clamp(stallWarning, 0f, 1f);
     }
     public void PlayBalloonPop() => mix.PlayBalloonPop();
+    public void PlayExplosion() => mix.PlayExplosion();
     public void Dispose()
     {
         output?.Stop();
@@ -47,7 +49,11 @@ public sealed class GameAudioMix : ISampleProvider
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
     private readonly AudioSettings settings;
     public volatile float Throttle = 0.65f;
+    public volatile bool EngineRunning = true;
     public volatile float StallWarning;
+    private int pendingExplosion;
+    private double explosionAge = 10, rumble, engineGain = 1;
+    public void PlayExplosion() => Interlocked.Exchange(ref pendingExplosion, 1);
     private double warningLevel;
     public volatile bool Focused = true;
     private int pendingPops;
@@ -72,6 +78,7 @@ public sealed class GameAudioMix : ISampleProvider
     }
     public int Read(float[] buffer, int offset, int count)
     {
+        if (Interlocked.Exchange(ref pendingExplosion, 0) != 0) explosionAge = 0;
         int events = Math.Min(8, Interlocked.Exchange(ref pendingPops, 0));
         for (int j = 0; j < events; j++) { popAge[nextPop] = 0; nextPop = (nextPop + 1) % popAge.Length; }
         const double dt = 1.0 / 44100;
@@ -115,7 +122,15 @@ public sealed class GameAudioMix : ISampleProvider
             }
             warningLevel += (StallWarning-warningLevel)*0.001;
             double warning = Tone(850,time) * (0.5+0.5*Tone(4,time)) * warningLevel * Math.Clamp(settings.StallWarningVolume,0,1);
-            double common = warning + engine*Math.Clamp(settings.EngineVolume,0,1) + pop*Math.Clamp(settings.PopVolume,0,1);
+            engineGain += ((EngineRunning ? 1 : 0)-engineGain)*0.002;
+            rumble += (noise-rumble)*0.035;
+            double blast = 0;
+            if (explosionAge < 2.5) {
+                blast = (noise*Math.Exp(-explosionAge*14)*0.6 + rumble*Math.Exp(-explosionAge*2)*2
+                    + Tone(45,explosionAge)*Math.Exp(-explosionAge*3)*0.35)*Math.Min(1,explosionAge/0.002);
+                explosionAge += dt;
+            }
+            double common = blast*Math.Clamp(settings.ExplosionVolume,0,1) + warning + engine*engineGain*Math.Clamp(settings.EngineVolume,0,1) + pop*Math.Clamp(settings.PopVolume,0,1);
             double gain = Math.Clamp(settings.MasterVolume,0,1)*focusGain;
             double musicGain = Math.Clamp(settings.MusicVolume,0,1)*musicFade;
             buffer[offset+i] = (float)Math.Tanh((common+(left+arp+bass+drum)*musicGain)*gain);
