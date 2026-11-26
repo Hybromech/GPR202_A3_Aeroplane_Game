@@ -252,7 +252,7 @@ namespace GPR202_Assessment3
             if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
 
             // Follow heading and pitch without inheriting aircraft bank.
-            Vector3 camWorldPos = plane.position - flight.Forward * 15f + Vector3.UnitY * 4.5f;
+            Vector3 camWorldPos = plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
             Vector3 cameraTarget = plane.position + flight.Forward * 8f;
             float cameraBlend = 1f - MathF.Exp(-flightSettings.CameraFollowSpeed * (float)Math.Min(args.Time, 0.1));
             if (!cameraReady) { smoothCamera = camWorldPos; smoothTarget = cameraTarget; cameraReady = true; }

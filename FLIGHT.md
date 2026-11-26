@@ -23,3 +23,5 @@ Horizontal mouse position selects a bank angle up to AssistedMaxBankDegrees (60)
 FlightSettings.cs controls AssistedControls, AssistedMaxBankDegrees, AssistedRollRate, AssistedPitchRate, TurnLiftAssistance and CoordinatedTurnAssistance. F2 switches modes during flight. MaxBankAngleDegrees remains the overall bank limit.
 
 The chase camera stays level and follows smoothly (CameraFollowSpeed). Approaching stall produces a pulsing warning tone and subtle camera shake; StallShakeAmount=0 disables shaking and AudioSettings.StallWarningVolume=0 silences the warning. Gravity, thrust, drag and stall/lift forces remain simulated. These are game assists, not a validated flight-control system.
+
+CameraDistance in FlightSettings.cs controls chase-camera distance behind the plane (default 15 world units, minimum 1). Smaller values move closer. CameraFollowSpeed controls smoothing independently.

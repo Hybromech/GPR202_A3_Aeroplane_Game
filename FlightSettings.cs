@@ -9,6 +9,8 @@ namespace GPR202_Assessment3
         public float AssistedPitchRate { get; set; } = 0.65f;
         public float TurnLiftAssistance { get; set; } = 0.65f;
         public float CoordinatedTurnAssistance { get; set; } = 1f;
+        // Distance behind the plane in world units; rendering enforces a minimum of 1.
+        public float CameraDistance { get; set; } = 15f;
         public float CameraFollowSpeed { get; set; } = 7f;
         public float StallShakeAmount { get; set; } = 0.06f;
         public float Mass { get; set; } = 3500f;
