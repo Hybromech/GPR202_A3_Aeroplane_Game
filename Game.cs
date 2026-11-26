@@ -133,6 +133,8 @@ namespace GPR202_Assessment3
         private void SetupNewGame()
         {
             balloons_left = balloons_total;
+            planeMaterial.VictoryGold = false;
+            audio?.SetVictory(false);
             m_balloons = new List<BalloonState>();
             for (int i = 0; i < balloons_left; i++)
             {
@@ -180,7 +182,7 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Title = crashed ? "Crashed! Restarting..." : $"GPR2 Balloon Hunt!         Remaining: {balloons_left}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
+                Title = crashed ? "Crashed! Restarting..." : $"GPR2 Balloon Hunt!         {(balloons_left == 0 ? "VICTORY!" : "Remaining: " + balloons_left)}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    Current FPS: {currentFPS:0}     Average FPS: {averageFPS:0}";
             }
 
             base.OnUpdateFrame(args);
@@ -240,6 +242,11 @@ namespace GPR202_Assessment3
                     {
                         balloons_left--;
                         audio?.PlayBalloonPop();
+                        if (balloons_left == 0)
+                        {
+                            planeMaterial.VictoryGold = true;
+                            audio?.SetVictory(true);
+                        }
                         Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
                     }
                 }

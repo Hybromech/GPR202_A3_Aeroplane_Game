@@ -31,3 +31,5 @@ Throttle drives engine power with EngineResponseRate (default 2/s) spool respons
 Ground impact destroys the active plane, hides its visible/shadow meshes and emits a 256-particle fire/spark explosion with sound. Flight and balloon updates pause during the three-second effect. Restart resets the plane to its initial spawn, flight state, controls, camera and all eight balloons; GPU resources are reused.
 
 Crashes leave an irregular, feathered charred patch on the terrain (18-unit radius). The terrain material is darkened directly, so the mark follows slopes without decal flicker. The latest 16 crash marks persist through respawns for the current session; closing the game clears them.
+
+Collect all eight balloons to win: the full plane (including propeller) switches to a solid gold metallic material with low roughness, and victory music replaces the background track. Normal shading still applies to the gold. Restart clears the reward without modifying the configured normal material.

@@ -11,3 +11,5 @@ Run automated checks: dotnet run --project tests/AudioChecks/AudioChecks.csproj 
 StallWarningVolume controls a pulsing tone that grows as angle of attack approaches stall.
 
 ExplosionVolume controls the crash blast. Engine and stall-warning audio stop on impact; the soundtrack continues during the three-second restart sequence.
+
+Collecting all balloons crossfades to an original looping major-key victory fanfare. MusicVolume controls both tracks. A crash restart restores the normal soundtrack.

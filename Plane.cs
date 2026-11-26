@@ -140,6 +140,7 @@ namespace GPR202_Assessment3
                 uniform vec3 ambientLight;
                 uniform vec3 viewPos;
 
+                uniform bool uVictoryGold;
                 uniform float uMetalness;
                 uniform float uRoughness;
                 uniform float uBias;
@@ -225,7 +226,7 @@ namespace GPR202_Assessment3
                 void main()
                 {
                     vec4 texColor = texture(texture0, texCoord);
-                    vec3 baseColor = texColor.rgb;
+                    vec3 baseColor = uVictoryGold ? vec3(1.0, 0.766, 0.336) : texColor.rgb;
                     vec3 lightDir = normalize(-dirLight.direction);
 
                     float shadow = ComputeShadow(lightSpacePos, lightDir);

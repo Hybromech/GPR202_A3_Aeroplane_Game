@@ -32,6 +32,7 @@ public sealed class GameAudio : IDisposable
         mix.EngineRunning = engineRunning;
         mix.StallWarning = Math.Clamp(stallWarning, 0f, 1f);
     }
+    public void SetVictory(bool won) => mix.Victory = won;
     public void PlayBalloonPop() => mix.PlayBalloonPop();
     public void PlayExplosion() => mix.PlayExplosion();
     public void Dispose()
@@ -48,6 +49,10 @@ public sealed class GameAudioMix : ISampleProvider
 {
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
     private readonly AudioSettings settings;
+    public volatile bool Victory;
+    private bool previousVictory;
+    private double victoryTime, victoryBlend;
+    private static readonly int[] VictoryMelody = {72,76,79,84,83,79,76,79,77,81,84,81,79,76,74,72};
     public volatile float Throttle = 0.65f;
     public volatile bool EngineRunning = true;
     public volatile float StallWarning;
@@ -78,6 +83,8 @@ public sealed class GameAudioMix : ISampleProvider
     }
     public int Read(float[] buffer, int offset, int count)
     {
+        if (Victory && !previousVictory) victoryTime = 0;
+        previousVictory = Victory;
         if (Interlocked.Exchange(ref pendingExplosion, 0) != 0) explosionAge = 0;
         int events = Math.Min(8, Interlocked.Exchange(ref pendingPops, 0));
         for (int j = 0; j < events; j++) { popAge[nextPop] = 0; nextPop = (nextPop + 1) % popAge.Length; }
@@ -133,8 +140,18 @@ public sealed class GameAudioMix : ISampleProvider
             double common = blast*Math.Clamp(settings.ExplosionVolume,0,1) + warning + engine*engineGain*Math.Clamp(settings.EngineVolume,0,1) + pop*Math.Clamp(settings.PopVolume,0,1);
             double gain = Math.Clamp(settings.MasterVolume,0,1)*focusGain;
             double musicGain = Math.Clamp(settings.MusicVolume,0,1)*musicFade;
-            buffer[offset+i] = (float)Math.Tanh((common+(left+arp+bass+drum)*musicGain)*gain);
-            if(i+1<count) buffer[offset+i+1] = (float)Math.Tanh((common+(right+arp+bass+drum)*musicGain)*gain);
+            // Crossfade to an original major-key brass-like victory fanfare.
+            victoryBlend += ((Victory ? 1 : 0)-victoryBlend)*0.0001;
+            double noteTime = victoryTime % 0.3;
+            int note = VictoryMelody[(int)(victoryTime/0.3)%VictoryMelody.Length];
+            double envelope = Math.Min(1,noteTime/0.025)*Math.Min(1,(0.3-noteTime)/0.06);
+            double fanfare = (Tone(Hz(note),victoryTime)+0.3*Tone(Hz(note)*2,victoryTime))*envelope*0.28;
+            fanfare += (Tone(Hz(48),victoryTime)+Tone(Hz(52),victoryTime)+Tone(Hz(55),victoryTime))*0.1;
+            if (Victory || victoryBlend>0.0001) victoryTime += dt;
+            left = (left+arp+bass+drum)*(1-victoryBlend)+fanfare*victoryBlend;
+            right = (right+arp+bass+drum)*(1-victoryBlend)+fanfare*victoryBlend;
+            buffer[offset+i] = (float)Math.Tanh((common+left*musicGain)*gain);
+            if(i+1<count) buffer[offset+i+1] = (float)Math.Tanh((common+right*musicGain)*gain);
             frame++;
         }
         return count;
