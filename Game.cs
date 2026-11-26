@@ -231,8 +231,14 @@ namespace GPR202_Assessment3
         {
             if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
 
-            Vector3 camWorldPos = plane.position - flight.Forward * 15f + flight.Up * 4.5f;
-            Matrix4 view = Matrix4.LookAt(camWorldPos, plane.position + flight.Forward * 8f, flight.Up);
+            // Follow heading and pitch without inheriting aircraft bank.
+            Vector3 camWorldPos = plane.position - flight.Forward * 15f + Vector3.UnitY * 4.5f;
+            Vector3 cameraTarget = plane.position + flight.Forward * 8f;
+            Vector3 viewDirection = Vector3.Normalize(cameraTarget - camWorldPos);
+            // Avoid a degenerate LookAt when looking almost straight up or down.
+            Vector3 cameraUp = MathF.Abs(Vector3.Dot(viewDirection, Vector3.UnitY)) > 0.999f
+                ? Vector3.UnitZ : Vector3.UnitY;
+            Matrix4 view = Matrix4.LookAt(camWorldPos, cameraTarget, cameraUp);
             cam.AspectRatio = (float)FramebufferSize.X / FramebufferSize.Y;
             Matrix4 proj = cam.GetProjectionMatrix();
 
