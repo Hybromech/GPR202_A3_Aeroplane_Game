@@ -78,7 +78,7 @@ namespace GPR202_Assessment3
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
                 * Matrix4.CreateRotationY(rates.Y*dt)
-                * Matrix4.CreateRotationZ(-rates.Z*dt) * Orientation;
+                * Matrix4.CreateRotationZ(rates.Z*dt) * Orientation;
             // Remove accumulated numerical drift without constraining pitch or bank.
             forward = Vector3.Normalize(Forward);
             right = Vector3.Normalize(Vector3.Cross(Up, forward));
