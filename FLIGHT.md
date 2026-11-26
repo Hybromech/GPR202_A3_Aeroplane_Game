@@ -1,6 +1,6 @@
 # Flight controls and model
 
-Mouse position is a virtual stick: above centre pushes down, below pulls up, left/right banks. Arrow keys override the corresponding axis. In assisted mode, centre the cursor to level the wings. F2 switches assisted/unassisted controls; the title displays the active mode. Up arrow pushes down; Down arrow pulls up. A/D operate inverted rudder (A right, D left); W/S increase/decrease throttle. Escape exits. The title shows airspeed (m/s), angle of attack, stall state and throttle.
+Mouse position is a virtual stick: above centre pushes down, below pulls up, left/right banks. Arrow keys override the corresponding axis. In assisted mode, centre the cursor to level the wings. F2 switches assisted/unassisted controls; the title displays the active mode. Up arrow pushes down; Down arrow pulls up. A/D operate inverted rudder (A right, D left); W/S increase/decrease throttle. Mouse wheel up/down also increases/decreases throttle by 5 percentage points per notch, clamped to 0–100%; tune ThrottleWheelStep in FlightSettings.cs. Escape exits. The title shows airspeed (m/s), angle of attack, stall state and throttle.
 
 The simulation runs at 120 Hz with bounded catch-up after stalls in frame delivery. FlightSettings.cs contains mass, wing area, thrust, lift/drag coefficients, stall angle and angular control tuning. Orientation drives both aircraft rendering passes. The chase camera follows heading and pitch with a world-up offset and level horizon, independently of aircraft bank. Propeller animation remains independent.
 

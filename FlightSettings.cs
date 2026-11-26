@@ -26,6 +26,8 @@ namespace GPR202_Assessment3
         // Maximum absolute bank relative to the horizon.
         public float MaxBankAngleDegrees { get; set; } = 90f;
         public float YawAuthority { get; set; } = 0.6f;
+        // Fraction of full throttle per wheel notch (0.05 = 5%).
+        public float ThrottleWheelStep { get; set; } = 0.05f;
         public float StartSpeed { get; set; } = 85f;
     }
 }

@@ -146,6 +146,13 @@ namespace GPR202_Assessment3
             base.OnUnload();
         }
 
+        protected override void OnMouseWheel(MouseWheelEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (!IsFocused || flight is null) return;
+            flight.Throttle = Math.Clamp(flight.Throttle + e.OffsetY * flightSettings.ThrottleWheelStep, 0f, 1f);
+        }
+
         protected override void OnResize(ResizeEventArgs e)
         {
             GL.Viewport(0, 0, e.Width, e.Height);
