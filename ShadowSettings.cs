@@ -4,7 +4,7 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
-        public float PropellerRpm { get; set; } = 900f;
+        public float PropellerRpm { get; set; } = 400f;
 
         public bool GpuTimingEnabled { get; set; } = true;
         // Narrower 3x3 terrain kernel; false restores the wider tapered filter.
@@ -25,8 +25,9 @@ namespace GPR202_Assessment3
 
         // Balloon highlights feeding the shared bloom pass.
         public bool BalloonBloomEnabled { get; set; } = true;
-        public float BalloonBloomThreshold { get; set; } = 0.2f;
-        public float BalloonBloomIntensity { get; set; } = 5.0f;
+        public float BalloonBloomThreshold { get; set; } = 0.3f;
+        public float BalloonBloomIntensity { get; set; } = 1.48f;
+
 
         // Plane metallic material: high metalness and moderately polished finish.
         public float PlaneMetalness { get; set; } = 0.9f;
