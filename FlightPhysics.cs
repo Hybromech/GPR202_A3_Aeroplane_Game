@@ -64,8 +64,8 @@ namespace GPR202_Assessment3
             Velocity += force / Math.Max(1f, settings.Mass) * dt;
             Position += Velocity * dt;
 
-            // Pitch and yaw retain aerodynamic torque, damping and restoring moments.
-            // Roll input selects a bank angle, approached at a bounded constant rate.
+            // Aerodynamic control torque scales with dynamic pressure. Damping and
+            // restoring moments allow banking, pitch inertia, sideslip and stall recovery.
             float authority = Math.Clamp(speed*speed / (70f*70f), 0f, 2f);
             float trimAlpha = (settings.Mass*9.81f / Math.Max(1f, pressure*settings.WingArea)
                 - settings.ZeroAngleLift) / settings.LiftSlope;
@@ -73,26 +73,12 @@ namespace GPR202_Assessment3
             Vector3 acceleration = new Vector3(
                 settings.PitchAuthority*pitch - 1.8f*(AngleOfAttack-trimAlpha) - 2.5f*rates.X,
                 settings.YawAuthority*yaw + 1.2f*beta - 2.0f*rates.Y,
-                0f) * authority;
+                settings.RollAuthority*roll - 2.0f*rates.Z) * authority;
             rates += acceleration * dt;
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
-                * Matrix4.CreateRotationY(rates.Y*dt) * Orientation;
-            // Measure bank about the current forward axis relative to the horizon.
-            // At vertical flight the horizon bank is undefined; retain the current roll.
-            float horizonRight = Right.Y, horizonUp = Up.Y;
-            rates.Z = 0f;
-            if (horizonRight*horizonRight + horizonUp*horizonUp > 0.0001f)
-            {
-                float targetBank = roll * MathHelper.DegreesToRadians(
-                    Math.Clamp(settings.MaxBankAngleDegrees, 0f, 89f));
-                float bank = MathF.Atan2(horizonRight, horizonUp);
-                float error = MathF.Atan2(MathF.Sin(targetBank-bank), MathF.Cos(targetBank-bank));
-                float maxStep = Math.Max(0f, settings.RollAuthority) * dt;
-                float bankStep = Math.Clamp(error, -maxStep, maxStep);
-                rates.Z = bankStep / dt;
-                Orientation = Matrix4.CreateRotationZ(bankStep) * Orientation;
-            }
+                * Matrix4.CreateRotationY(rates.Y*dt)
+                * Matrix4.CreateRotationZ(rates.Z*dt) * Orientation;
             // Remove accumulated numerical drift without constraining pitch or bank.
             forward = Vector3.Normalize(Forward);
             right = Vector3.Normalize(Vector3.Cross(Up, forward));
