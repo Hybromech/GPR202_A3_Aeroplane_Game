@@ -64,8 +64,8 @@ namespace GPR202_Assessment3
             Velocity += force / Math.Max(1f, settings.Mass) * dt;
             Position += Velocity * dt;
 
-            // Aerodynamic control torque scales with dynamic pressure. Damping and
-            // restoring moments allow banking, pitch inertia, sideslip and stall recovery.
+            // Pitch and yaw retain aerodynamic torque, damping and restoring moments.
+            // Roll is commanded directly as a constant angular speed.
             float authority = Math.Clamp(speed*speed / (70f*70f), 0f, 2f);
             float trimAlpha = (settings.Mass*9.81f / Math.Max(1f, pressure*settings.WingArea)
                 - settings.ZeroAngleLift) / settings.LiftSlope;
@@ -73,9 +73,10 @@ namespace GPR202_Assessment3
             Vector3 acceleration = new Vector3(
                 settings.PitchAuthority*pitch - 1.8f*(AngleOfAttack-trimAlpha) - 2.5f*rates.X,
                 settings.YawAuthority*yaw + 1.2f*beta - 2.0f*rates.Y,
-                settings.RollAuthority*roll - 2.0f*rates.Z) * authority;
+                0f) * authority;
             rates += acceleration * dt;
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));
+            rates.Z = Math.Max(0f, settings.RollAuthority) * roll;
             Orientation = Matrix4.CreateRotationX(-rates.X*dt)
                 * Matrix4.CreateRotationY(rates.Y*dt)
                 * Matrix4.CreateRotationZ(rates.Z*dt) * Orientation;

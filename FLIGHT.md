@@ -6,8 +6,10 @@ The simulation runs at 120 Hz with bounded catch-up after stalls in frame delive
 
 Lift depends on dynamic pressure and angle of attack. Beyond the critical angle, lift falls and drag increases. Hard pull-ups can stall even above low-speed stall speed. Release or push forward to reduce angle of attack and rebuild airspeed; use throttle as needed. Banking tilts the lift vector and changes the flight path.
 
-This is a simplified aerodynamic game model with empirical angular response and automatic pitch trim, not validated P-51 performance. It omits wind, compressibility, detailed inertia, propwash and landing-gear dynamics. Terrain contact respawns the plane 250 units above the contact point. Camera banking and mouse sensitivity need playtesting.
+This is a simplified aerodynamic game model with empirical angular response and automatic pitch trim, not validated P-51 performance. It omits wind, compressibility, detailed inertia, propwash and landing-gear dynamics. Terrain contact respawns the plane 250 units above the contact point. Camera tracking and mouse sensitivity need playtesting.
 
 Run deterministic physics checks with:
 
     dotnet run --project tests/FlightChecks/FlightChecks.csproj -c Release
+
+RollAuthority is the maximum bank rotation rate in radians/second (default 3, about 172 degrees/second). Half stick gives half this rate; centred input stops rolling immediately. Roll has no acceleration, damping or airspeed scaling. Pitch and yaw retain their aerodynamic response.
