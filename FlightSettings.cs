@@ -16,7 +16,11 @@ namespace GPR202_Assessment3
         public float Mass { get; set; } = 3500f;
         public float WingArea { get; set; } = 22f;
         public float AirDensity { get; set; } = 1.225f;
-        public float MaxThrust { get; set; } = 12000f;
+        public float MaxThrust { get; set; } = 18000f;
+        public float EngineResponseRate { get; set; } = 2f;
+        // Extra drag from the windmilling propeller at closed throttle.
+        public float IdlePropellerDrag { get; set; } = 0.015f;
+        public float PropellerIdleFraction { get; set; } = 0.2f;
         public float LiftSlope { get; set; } = 5.2f;
         public float ZeroAngleLift { get; set; } = 0.2f;
         public float StallAngleDegrees { get; set; } = 16f;

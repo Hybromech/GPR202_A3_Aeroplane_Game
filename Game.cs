@@ -177,14 +177,14 @@ namespace GPR202_Assessment3
 
             base.OnUpdateFrame(args);
 
-            audio?.Update(flight.Throttle, IsFocused, flight.StallWarning);
+            audio?.Update(flight.EnginePower, IsFocused, flight.StallWarning);
             if (!IsFocused)
             {
                 return;
             }
 
             float deltatime = (float)args.Time;
-            plane.UpdatePropeller(deltatime, shadowSettings.PropellerRpm);
+
 
             // ----- Input (variable timestep) -----
             HandleInput(deltatime);
@@ -222,6 +222,7 @@ namespace GPR202_Assessment3
                     }
                 }
 
+                plane.UpdatePropeller(FixedDeltaTime, shadowSettings.PropellerRpm * flight.PropellerSpeedFraction);
                 _accumulator -= FixedDeltaTime;
             }
         }

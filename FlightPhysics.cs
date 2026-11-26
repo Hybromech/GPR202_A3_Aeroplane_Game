@@ -11,6 +11,9 @@ namespace GPR202_Assessment3
         // Body rates: positive pitch = nose up, positive roll = right bank.
         private Vector3 rates;
         public float Throttle { get; set; } = 0.65f;
+        public float EnginePower { get; private set; } = 0.65f;
+        public float PropellerSpeedFraction => Math.Clamp(settings.PropellerIdleFraction, 0f, 1f)
+            + (1f-Math.Clamp(settings.PropellerIdleFraction, 0f, 1f))*EnginePower;
         public float Airspeed => Velocity.Length;
         public float AngleOfAttack { get; private set; }
         public float BankAngle => MathF.Atan2(Right.Y, Up.Y);
@@ -29,6 +32,7 @@ namespace GPR202_Assessment3
             rates = Vector3.Zero;
             AngleOfAttack = 0f;
             Throttle = 0.65f;
+            EnginePower = Throttle;
         }
         public float LiftCoefficient(float alpha)
         {
@@ -47,6 +51,7 @@ namespace GPR202_Assessment3
             roll = Math.Clamp(roll, -1f, 1f);
             yaw = Math.Clamp(yaw, -1f, 1f);
             Throttle = Math.Clamp(Throttle, 0f, 1f);
+            EnginePower += (Throttle-EnginePower) * (1f-MathF.Exp(-Math.Max(0f,settings.EngineResponseRate)*dt));
             float speed = Airspeed;
             Vector3 forward = Forward, up = Up, right = Right;
             float longitudinal = Vector3.Dot(Velocity, forward);
@@ -55,13 +60,13 @@ namespace GPR202_Assessment3
             float pressure = 0.5f * settings.AirDensity * speed * speed;
             float cl = LiftCoefficient(AngleOfAttack);
             float separated = Math.Max(0f, MathF.Abs(AngleOfAttack) - MathHelper.DegreesToRadians(settings.StallAngleDegrees));
-            float cd = settings.ParasiticDrag + settings.InducedDrag * cl * cl
+            float cd = settings.ParasiticDrag + settings.IdlePropellerDrag*(1f-EnginePower) + settings.InducedDrag * cl * cl
                 + 1.2f * MathF.Sin(AngleOfAttack) * MathF.Sin(AngleOfAttack) + separated * 0.8f;
             Vector3 direction = speed > 0.1f ? Velocity/speed : forward;
             Vector3 liftDirection = up - direction * Vector3.Dot(up, direction);
             if (liftDirection.LengthSquared > 0.0001f) liftDirection.Normalize();
             else liftDirection = Vector3.Zero;
-            Vector3 force = forward * (settings.MaxThrust * Throttle)
+            Vector3 force = forward * (settings.MaxThrust * EnginePower)
                 + pressure * settings.WingArea * (cl * liftDirection - cd * direction - 0.5f * beta * right)
                 + new Vector3(0f, -9.81f * settings.Mass, 0f);
             Velocity += force / Math.Max(1f, settings.Mass) * dt;

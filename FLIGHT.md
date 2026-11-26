@@ -25,3 +25,5 @@ FlightSettings.cs controls AssistedControls, AssistedMaxBankDegrees, AssistedRol
 The chase camera stays level and follows smoothly (CameraFollowSpeed). Approaching stall produces a pulsing warning tone and subtle camera shake; StallShakeAmount=0 disables shaking and AudioSettings.StallWarningVolume=0 silences the warning. Gravity, thrust, drag and stall/lift forces remain simulated. These are game assists, not a validated flight-control system.
 
 CameraDistance in FlightSettings.cs controls chase-camera distance behind the plane (default 15 world units, minimum 1). Smaller values move closer. CameraFollowSpeed controls smoothing independently.
+
+Throttle drives engine power with EngineResponseRate (default 2/s) spool response. MaxThrust is now 18000 N; IdlePropellerDrag adds 0.015 drag coefficient at closed throttle. Speed remains governed by forces and can rise in a dive even at idle. Propeller animation and engine audio follow engine power. ShadowSettings.PropellerRpm is the full-power visual RPM; FlightSettings.PropellerIdleFraction defaults to 0.2. Recovery checks allow 20 seconds with full throttle after the sustained hard-pull stall.
