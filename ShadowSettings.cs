@@ -4,6 +4,11 @@ namespace GPR202_Assessment3
 {
     public class ShadowSettings
     {
+        public bool TerrainLodEnabled { get; set; } = true;
+        public float TerrainLodNearDistance { get; set; } = 250f;
+        public float TerrainLodMediumDistance { get; set; } = 600f;
+        public float TerrainLodFarDistance { get; set; } = 1100f;
+
         // Bloom: luminance threshold, additive strength and horizontal/vertical blur pairs.
         public bool BloomEnabled { get; set; } = true;
         public float BloomThreshold { get; set; } = 1.0f;

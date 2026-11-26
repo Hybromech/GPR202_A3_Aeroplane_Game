@@ -229,6 +229,12 @@ namespace GPR202_Assessment3
             CreateChunks();
         }
 
+        public void UpdateLod(Vector3 cameraPosition, ShadowSettings settings)
+        {
+            // Select once so camera and shadow passes use identical geometry.
+            foreach (var chunk in chunks) chunk.SelectLod(cameraPosition, settings);
+        }
+
         public void DrawDepth(ShadowMap shadowMap)
         {
             if (shadowMap == null)
@@ -671,7 +677,10 @@ namespace GPR202_Assessment3
     public class TerrainChunk
     {
         private int vao, vbo, ebo;
-        private int indexCount;
+        private readonly int[] lodCounts = new int[4];
+        private readonly int[] lodOffsets = new int[4];
+        private int selectedLod;
+        private Vector2 minXZ, maxXZ;
         private Matrix4 model;
         private Vector3 sphereCenter;
         private float sphereRadius;
@@ -693,7 +702,7 @@ namespace GPR202_Assessment3
             float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
             float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
 
-            List<Vector3> worldVertices = new List<Vector3>((int)(spanX * spanZ));
+
 
             for (uint x = startX; x <= endX; x++)
             {
@@ -710,8 +719,8 @@ namespace GPR202_Assessment3
                     if (zpos < minZ) minZ = zpos;
                     if (zpos > maxZ) maxZ = zpos;
 
-                    Vector3 worldPos = new Vector3(xpos, h + Terrain.OffsetY, zpos);
-                    worldVertices.Add(worldPos);
+
+
 
                     Vector3 n = Terrain.GetNormalAt((int)x, (int)z);
 
@@ -728,41 +737,62 @@ namespace GPR202_Assessment3
                 }
             }
 
-            // Calculate precise bounding sphere for robust frustum culling
-            Vector3 minBounds = new Vector3(minX, minY + Terrain.OffsetY, minZ);
+            minXZ = new Vector2(minX, minZ);
+            maxXZ = new Vector2(maxX, maxZ);
+            // Skirts extend below every surface sample in this chunk. This also
+            // covers large boundary height differences at mixed detail levels.
+            float skirtFloor = minY - 2f;
+            var skirtVertices = new Dictionary<int, ushort>();
+            ushort Skirt(int top)
+            {
+                if (skirtVertices.TryGetValue(top, out ushort existing)) return existing;
+                ushort index = checked((ushort)(vertexdata.Count / 8));
+                for (int k = 0; k < 8; k++)
+                    vertexdata.Add(k == 1 ? skirtFloor : vertexdata[top * 8 + k]);
+                skirtVertices.Add(top, index);
+                return index;
+            }
+            void Triangle(int a, int b, int c)
+            {
+                indices.Add(checked((ushort)a));
+                indices.Add(checked((ushort)b));
+                indices.Add(checked((ushort)c));
+            }
+            void Edge(int a, int b)
+            {
+                int lowerA = Skirt(a), lowerB = Skirt(b);
+                Triangle(a, b, lowerB);
+                Triangle(lowerB, lowerA, a);
+            }
+            int nx = (int)spanX, nz = (int)spanZ;
+            for (int level = 0; level < 4; level++)
+            {
+                int step = 1 << level;
+                lodOffsets[level] = indices.Count * sizeof(ushort);
+                int first = indices.Count;
+                for (int x = 0; x < nx - 1; x += step)
+                for (int z = 0; z < nz - 1; z += step)
+                {
+                    // Include the final row/column even in the 127-cell edge chunks.
+                    int x1 = Math.Min(x + step, nx - 1);
+                    int z1 = Math.Min(z + step, nz - 1);
+                    int a = x * nz + z, b = x1 * nz + z;
+                    int c = x1 * nz + z1, d = x * nz + z1;
+                    Triangle(a, b, c);
+                    Triangle(c, d, a);
+                    if (z == 0) Edge(b, a);
+                    if (x1 == nx - 1) Edge(c, b);
+                    if (z1 == nz - 1) Edge(d, c);
+                    if (x == 0) Edge(a, d);
+                }
+                lodCounts[level] = indices.Count - first;
+            }
+            // Conservative bounds include all detail levels and skirts.
+            Vector3 minBounds = new Vector3(minX, skirtFloor + Terrain.OffsetY, minZ);
             Vector3 maxBounds = new Vector3(maxX, maxY + Terrain.OffsetY, maxZ);
             sphereCenter = (minBounds + maxBounds) * 0.5f;
+            sphereRadius = (maxBounds - sphereCenter).Length;
 
-            sphereRadius = 0f;
-            for (int i = 0; i < worldVertices.Count; i++)
-            {
-                float dist = Vector3.Distance(sphereCenter, worldVertices[i]);
-                if (dist > sphereRadius)
-                {
-                    sphereRadius = dist;
-                }
-            }
-
-            for (uint x = 0; x < spanX - 1; x++)
-            {
-                for (uint z = 0; z < spanZ - 1; z++)
-                {
-                    uint i0 = x * spanZ + z;
-                    uint i1 = (x + 1) * spanZ + z;
-                    uint i2 = (x + 1) * spanZ + (z + 1);
-                    uint i3 = x * spanZ + (z + 1);
-
-                    indices.Add(checked((ushort)i0));
-                    indices.Add(checked((ushort)i1));
-                    indices.Add(checked((ushort)i2));
-
-                    indices.Add(checked((ushort)i2));
-                    indices.Add(checked((ushort)i3));
-                    indices.Add(checked((ushort)i0));
-                }
-            }
-
-            indexCount = indices.Count;
             Vector3 position = new Vector3(0f, Terrain.OffsetY, 0f);
             model = Matrix4.Identity * Matrix4.CreateTranslation(position);
 
@@ -799,6 +829,23 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
+        public void SelectLod(Vector3 camera, ShadowSettings settings)
+        {
+            if (!settings.TerrainLodEnabled) { selectedLod = 0; return; }
+            // Horizontal distance to the nearest point on the chunk keeps the
+            // terrain directly beneath the player detailed at any altitude.
+            float dx = Math.Max(Math.Max(minXZ.X - camera.X, camera.X - maxXZ.X), 0f);
+            float dz = Math.Max(Math.Max(minXZ.Y - camera.Z, camera.Z - maxXZ.Y), 0f);
+            float distance = MathF.Sqrt(dx * dx + dz * dz);
+            float near = Math.Max(1f, settings.TerrainLodNearDistance);
+            float medium = Math.Max(near + 1f, settings.TerrainLodMediumDistance);
+            float far = Math.Max(medium + 1f, settings.TerrainLodFarDistance);
+            float Boundary(int level) => level == 0 ? near : level == 1 ? medium : far;
+            // 10% hysteresis avoids rapid switching when hovering at a boundary.
+            while (selectedLod < 3 && distance > Boundary(selectedLod) * 1.1f) selectedLod++;
+            while (selectedLod > 0 && distance < Boundary(selectedLod - 1) * 0.9f) selectedLod--;
+        }
+
         public bool IsInFrustum(Frustum frustum)
         {
             return frustum.IsSphereVisible(sphereCenter, sphereRadius);
@@ -810,7 +857,7 @@ namespace GPR202_Assessment3
             shadowMap.ApplyDepthModel(chunkModel);
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, lodCounts[selectedLod], DrawElementsType.UnsignedShort, lodOffsets[selectedLod]);
             GL.BindVertexArray(0);
         }
 
@@ -820,7 +867,7 @@ namespace GPR202_Assessment3
             GL.UniformMatrix4(modelLoc, true, ref chunkModel);
 
             GL.BindVertexArray(vao);
-            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, lodCounts[selectedLod], DrawElementsType.UnsignedShort, lodOffsets[selectedLod]);
             GL.BindVertexArray(0);
         }
     }

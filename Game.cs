@@ -252,6 +252,8 @@ namespace GPR202_Assessment3
             Matrix4 view = Matrix4.LookAt(camWorldPos, plane.GetPosition(), new Vector3(0f, 1f, 0f));
             Matrix4 proj = cam.GetProjectionMatrix();
 
+            terrain.UpdateLod(camWorldPos, shadowSettings);
+
             // --- PASS 1: Shadow Depth Pass (centered around plane) ---
             shadowMap.BeginPass(sunLight, plane.GetPosition());
 
