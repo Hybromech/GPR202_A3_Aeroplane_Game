@@ -87,26 +87,56 @@ namespace GPR202_Assessment3
             {
                 float bank = BankAngle;
                 float safety = 1f - StallWarning;
-                float targetBank = roll * MathHelper.DegreesToRadians(Math.Clamp(settings.AssistedMaxBankDegrees, 0f, settings.MaxBankAngleDegrees));
-                float bankError = MathF.Atan2(MathF.Sin(targetBank-bank), MathF.Cos(targetBank-bank));
-                float rollRate = Math.Clamp(bankError * 2.5f, -settings.AssistedRollRate, settings.AssistedRollRate);
+                float maxBankRad = MathHelper.DegreesToRadians(Math.Clamp(settings.AssistedMaxBankDegrees, 0f, Math.Min(75f, settings.MaxBankAngleDegrees)));
+
+                // 1. Bank smoothly into the requested left/right turn, leveling wings when centered.
+                float targetBank = roll * maxBankRad;
+                float bankError = MathF.Atan2(MathF.Sin(targetBank - bank), MathF.Cos(targetBank - bank));
+                float rollRate = Math.Clamp(bankError * 4.0f, -settings.AssistedRollRate, settings.AssistedRollRate);
                 // Near vertical, horizon bank is undefined: damp roll rather than chase it.
-                if (Right.Y*Right.Y + Up.Y*Up.Y < 0.01f) rollRate = 0f;
-                acceleration.Z = Math.Clamp((rollRate-rates.Z)*5f, -settings.RollAuthority, settings.RollAuthority)*authority;
+                if (Right.Y * Right.Y + Up.Y * Up.Y < 0.01f) rollRate = 0f;
+                float rollTorqueLimit = Math.Max(settings.RollAuthority, 4.5f);
+                acceleration.Z = Math.Clamp((rollRate - rates.Z) * 6.5f, -rollTorqueLimit, rollTorqueLimit) * authority;
 
-                // Pilot requests pitch rate; assistance uses bounded elevator torque, never extra lift.
-                float turnLoad = 1f / Math.Max(0.5f, MathF.Cos(bank)) - 1f;
-                float turnPitch = Math.Clamp(turnLoad*0.12f - Velocity.Y*0.008f, 0f, 0.18f)
-                    * settings.TurnLiftAssistance * safety * (1f-MathF.Abs(pitch));
-                float pitchRate = pitch * settings.AssistedPitchRate + turnPitch;
-                acceleration.X = (Math.Clamp((pitchRate-rates.X)*3f, -settings.PitchAuthority, settings.PitchAuthority)
-                    - 1.8f*(AngleOfAttack-trimAlpha))*authority;
+                // 2. Build horizon-aligned basis so mouse up/down climbs/dives relative to the ground
+                //    and mouse left/right carves a coordinated horizontal turn using both pitch and yaw.
+                Vector3 horizonLeft = Vector3.Cross(Vector3.UnitY, forward);
+                if (horizonLeft.LengthSquared > 1e-4f)
+                {
+                    horizonLeft.Normalize();
+                }
+                else
+                {
+                    horizonLeft = right;
+                }
+                Vector3 worldPitchUp = Vector3.Cross(forward, horizonLeft);
+                if (worldPitchUp.LengthSquared > 1e-4f) worldPitchUp.Normalize();
+                else worldPitchUp = up;
 
-                // Follow the banked lift's turn, while damping sideslip. Manual rudder takes priority.
-                float turnYaw = -9.81f*MathF.Sin(bank)/Math.Max(30f,speed);
-                float yawAssist = Math.Clamp((turnYaw-rates.Y)*2f + 1.5f*beta, -0.4f, 0.4f)
-                    * settings.CoordinatedTurnAssistance * safety * (1f-MathF.Abs(yaw));
-                acceleration.Y += yawAssist*authority;
+                // World-horizontal turn rate: positive roll (mouse right) turns right (-horizonLeft),
+                // negative roll (mouse left) turns left (+horizonLeft). Manual rudder adds to it.
+                float turnScale = Math.Max(0f, settings.AssistedTurnRate) * (0.45f + 0.55f * safety);
+                float desiredRightTurnRate = roll * turnScale * settings.CoordinatedTurnAssistance
+                    - yaw * settings.YawAuthority * 0.65f;
+
+                // World-vertical climb/dive rate: mouse up (+pitch) climbs relative to ground,
+                // mouse down (-pitch) dives; centered pitch holds level altitude during turns.
+                float levelHold = Math.Clamp(-Velocity.Y * 0.012f - forward.Y * 0.65f, -0.35f, 0.35f)
+                    * settings.TurnLiftAssistance * safety * (1f - MathF.Abs(pitch));
+                float desiredClimbRate = pitch * settings.AssistedPitchRate + levelHold;
+
+                // Project desired world nose rotation onto the aircraft's local Up (elevator) and Right (rudder) axes:
+                // d(Forward)/dt = rates.X * Up + rates.Y * Right.
+                Vector3 desiredDFwd = worldPitchUp * desiredClimbRate + horizonLeft * (-desiredRightTurnRate);
+                float targetPitchRate = Vector3.Dot(desiredDFwd, up);
+                float targetYawRate = Vector3.Dot(desiredDFwd, right);
+
+                float pitchTorqueLimit = Math.Max(settings.PitchAuthority * 2.2f, 3.2f);
+                float yawTorqueLimit = Math.Max(settings.YawAuthority * 3.0f, 2.2f);
+                acceleration.X = (Math.Clamp((targetPitchRate - rates.X) * 5.0f, -pitchTorqueLimit, pitchTorqueLimit)
+                    - 1.2f * (AngleOfAttack - trimAlpha)) * authority;
+                acceleration.Y = (Math.Clamp((targetYawRate - rates.Y) * 5.0f, -yawTorqueLimit, yawTorqueLimit)
+                    + 1.5f * beta) * authority;
             }
             rates += acceleration * dt;
             rates = Vector3.Clamp(rates, new Vector3(-2.5f), new Vector3(2.5f));

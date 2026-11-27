@@ -30,6 +30,7 @@ namespace GPR202_Assessment3
                 AssistedMaxBankDegrees = AssistedMaxBankDegrees,
                 AssistedRollRate = AssistedRollRate,
                 AssistedPitchRate = AssistedPitchRate,
+                AssistedTurnRate = AssistedTurnRate,
                 TurnLiftAssistance = TurnLiftAssistance,
                 CoordinatedTurnAssistance = CoordinatedTurnAssistance,
                 CameraDistance = CameraDistance,

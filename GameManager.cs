@@ -99,9 +99,9 @@ namespace GPR202_Assessment3
             var enemy4 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns | EnemyWeapon.Missiles, 550, 2, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
 
             EnemySpawner.Add(enemy1);
-            EnemySpawner.Add(enemy2);
-            EnemySpawner.Add(enemy3);
-            EnemySpawner.Add(enemy4);
+            //EnemySpawner.Add(enemy2);
+            //EnemySpawner.Add(enemy3);
+            //EnemySpawner.Add(enemy4);
 
             EnemySpawner.SpawnAll();
         }

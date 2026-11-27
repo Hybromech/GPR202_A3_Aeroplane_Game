@@ -4,14 +4,15 @@ namespace GPR202_Assessment3
     public class FlightSettings
     {
         public bool AssistedControls { get; set; } = true;
-        public float AssistedMaxBankDegrees { get; set; } = 90f; // 90f
-        public float AssistedRollRate { get; set; } = 1.0f; //1.0f
-        public float AssistedPitchRate { get; set; } = 1.65f; //0.65f
-        public float TurnLiftAssistance { get; set; } = 1.65f; //0.65f
+        public float AssistedMaxBankDegrees { get; set; } = 90; // 68f
+        public float AssistedRollRate { get; set; } = 2.4f; //1.0f
+        public float AssistedPitchRate { get; set; } = 1.15f; //0.65f
+        public float AssistedTurnRate { get; set; } = 0.90f;
+        public float TurnLiftAssistance { get; set; } = 1.0f; //0.65f
         public float CoordinatedTurnAssistance { get; set; } = 1f;
-        // Distance behind the plane in world units; rendering enforces a minimum of 1.
-        public float CameraDistance { get; set; } = 3f;
-        public float CameraFollowSpeed { get; set; } = 3f;
+        // Distance behind the plane in world units; rendering enforces a minimum of 10.
+        public float CameraDistance { get; set; } = 22f;
+        public float CameraFollowSpeed { get; set; } = 8f;
         public float StallShakeAmount { get; set; } = 0.06f;
         public float Mass { get; set; } = 3500f;
         public float WingArea { get; set; } = 22f;

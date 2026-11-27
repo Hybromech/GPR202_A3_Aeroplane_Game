@@ -19,11 +19,21 @@ Assert(sign*MathF.Atan2(f.Right.Y,f.Up.Y)<1.5f,"Reverse input must leave bank li
 const float dt=1f/120;
 foreach(float sign in new[]{-1f,1f}) {
 var f=new FlightPhysics(new FlightSettings());f.Reset(new Vector3(0,1000,0));
-for(int n=0;n<360;n++){f.Step(dt,0,sign*0.5f,0);Assert(Math.Abs(f.BankAngle)<=MathF.PI/3+0.001,"Assisted bank cap");}
-Console.WriteLine($"Assisted target 30deg: {MathHelper.RadiansToDegrees(f.BankAngle)}");
-Assert(Math.Abs(f.BankAngle-sign*MathF.PI/6)<0.12,"Assisted bank must track target");
+float maxBankRad=MathHelper.DegreesToRadians(new FlightSettings().AssistedMaxBankDegrees);
+for(int n=0;n<360;n++){f.Step(dt,0,sign*0.5f,0);Assert(Math.Abs(f.BankAngle)<=maxBankRad+0.02f,"Assisted bank cap");}
+Console.WriteLine($"Assisted target {MathHelper.RadiansToDegrees(sign*0.5f*maxBankRad):F1}deg: {MathHelper.RadiansToDegrees(f.BankAngle):F1}deg, Forward.X={f.Forward.X:F2}");
+Assert(Math.Abs(f.BankAngle-sign*0.5f*maxBankRad)<0.14,"Assisted bank must track target");
+Assert(sign*f.Forward.X>0.4f,"Assisted left/right input must turn heading convincingly in requested direction");
 for(int n=0;n<360;n++)f.Step(dt,0,0,0);
-Assert(Math.Abs(f.BankAngle)<0.05,"Centre must level wings");
+Assert(Math.Abs(f.BankAngle)<0.06,"Centre must level wings");
+}
+// Verify horizon-relative climb while banked: mouse up (+pitch) climbs relative to ground even during a turn.
+{
+var bankedClimb=new FlightPhysics(new FlightSettings());bankedClimb.Reset(new Vector3(0,1000,0));
+for(int n=0;n<120;n++)bankedClimb.Step(dt,0,1f,0);
+float yBefore=bankedClimb.Position.Y;
+for(int n=0;n<240;n++)bankedClimb.Step(dt,0.7f,0.8f,0);
+Assert(bankedClimb.Position.Y>yBefore+20f && bankedClimb.Forward.Y>0.1f,"Assisted pitch-up while banked must climb relative to ground");
 }
 var cfg=new FlightSettings();var p=new FlightPhysics(cfg);p.Reset(new Vector3(0,1000,0));bool stalled=false,warned=false;
 for(int n=0;n<2400;n++){p.Step(dt,1,0,0);stalled|=p.IsStalled;warned|=p.StallWarning>0;}

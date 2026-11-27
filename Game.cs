@@ -32,7 +32,7 @@ namespace GPR202_Assessment3
         private bool crashed;
         private float crashTime;
         private Vector3 initialSpawn;
-        private Vector3 smoothCamera, smoothTarget;
+        private Vector3 smoothCamera, smoothTarget, smoothCamForward;
         private bool cameraReady;
         private double cameraTime;
         private int[] viewport = new int[4];
@@ -544,7 +544,10 @@ namespace GPR202_Assessment3
             pitchInput = -pitchInput;
             yawInput = -yawInput;
             if (flightSettings.AssistedControls)
-                pitchInput = 0.35f*pitchInput + 0.65f*pitchInput*pitchInput*pitchInput;
+            {
+                // Inverted flight-stick pitch (mouse down pulls up, mouse up pushes down).
+                pitchInput = 0.7f * pitchInput + 0.3f * pitchInput * pitchInput * pitchInput;
+            }
             flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
                 * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
 
@@ -560,16 +563,64 @@ namespace GPR202_Assessment3
         {
             if (FramebufferSize.X <= 0 || FramebufferSize.Y <= 0) return;
 
-            // Follow heading and pitch without inheriting aircraft bank.
-            Vector3 camWorldPos = plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
-            Vector3 cameraTarget = plane.position + flight.Forward * 8f;
-            if (crashed) { camWorldPos = plane.position + new Vector3(0f, 18f, 30f); cameraTarget = plane.position + Vector3.UnitY*4f; }
-            float cameraBlend = 1f - MathF.Exp(-flightSettings.CameraFollowSpeed * (float)Math.Min(args.Time, 0.1));
-            if (!cameraReady) { smoothCamera = camWorldPos; smoothTarget = cameraTarget; cameraReady = true; }
-            smoothCamera = Vector3.Lerp(smoothCamera, camWorldPos, cameraBlend);
-            smoothTarget = Vector3.Lerp(smoothTarget, cameraTarget, cameraBlend);
-            camWorldPos = smoothCamera;
-            cameraTarget = smoothTarget;
+            // Anchor the chase camera to plane.position and smooth only the follow direction
+            // so high airspeeds and tight turns never let the plane fly out of view.
+            float camDt = (float)Math.Min(args.Time, 0.1);
+            Vector3 camWorldPos;
+            Vector3 cameraTarget;
+            if (crashed)
+            {
+                Vector3 crashCam = plane.position + new Vector3(0f, 18f, 30f);
+                Vector3 crashTarget = plane.position + Vector3.UnitY * 4f;
+                float crashBlend = 1f - MathF.Exp(-4f * camDt);
+                if (!cameraReady) { smoothCamera = crashCam; smoothTarget = crashTarget; cameraReady = true; }
+                smoothCamera = Vector3.Lerp(smoothCamera, crashCam, crashBlend);
+                smoothTarget = Vector3.Lerp(smoothTarget, crashTarget, crashBlend);
+                camWorldPos = smoothCamera;
+                cameraTarget = smoothTarget;
+            }
+            else
+            {
+                float dirBlend = 1f - MathF.Exp(-Math.Max(2f, flightSettings.CameraFollowSpeed) * camDt);
+                if (!cameraReady || smoothCamForward.LengthSquared < 1e-4f)
+                {
+                    smoothCamForward = flight.Forward;
+                    cameraReady = true;
+                }
+                else
+                {
+                    smoothCamForward = Vector3.Lerp(smoothCamForward, flight.Forward, dirBlend);
+                    if (smoothCamForward.LengthSquared > 1e-6f) smoothCamForward.Normalize();
+                    else smoothCamForward = flight.Forward;
+                }
+
+                // Cap maximum angular lag (~16 deg) so even instant maneuvers keep the plane framed.
+                float cosAngle = Math.Clamp(Vector3.Dot(smoothCamForward, flight.Forward), -1f, 1f);
+                const float maxLagCos = 0.961f; // cos(16 deg)
+                if (cosAngle < maxLagCos)
+                {
+                    Vector3 perp = smoothCamForward - flight.Forward * cosAngle;
+                    if (perp.LengthSquared > 1e-6f)
+                    {
+                        perp.Normalize();
+                        float maxLagSin = MathF.Sqrt(1f - maxLagCos * maxLagCos);
+                        smoothCamForward = Vector3.Normalize(flight.Forward * maxLagCos + perp * maxLagSin);
+                    }
+                    else
+                    {
+                        smoothCamForward = flight.Forward;
+                    }
+                }
+
+                float speedOffset = Math.Clamp((flight.Airspeed - flightSettings.StartSpeed) * 0.04f, -2f, 4f);
+                float camDist = Math.Max(10f, flightSettings.CameraDistance) + speedOffset;
+                camWorldPos = plane.position - smoothCamForward * camDist + Vector3.UnitY * 5.0f;
+                float minCamY = Terrain.GetInterpolatedHeightAtWorld(camWorldPos.X, camWorldPos.Z) + 2.0f;
+                if (camWorldPos.Y < minCamY) camWorldPos.Y = minCamY;
+                cameraTarget = plane.position + smoothCamForward * 35f + Vector3.UnitY * 2.0f;
+                smoothCamera = camWorldPos;
+                smoothTarget = cameraTarget;
+            }
             cameraTime += args.Time;
             float shake = (crashed ? 0f : flight.StallWarning) * flightSettings.StallShakeAmount;
             camWorldPos += new Vector3((float)Math.Sin(cameraTime*73), (float)Math.Sin(cameraTime*91), 0f) * shake;
