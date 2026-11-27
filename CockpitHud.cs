@@ -17,8 +17,20 @@ namespace GPR202_Assessment3
         public float StallWarning { get; init; }      // 0..1
         public bool Crashed { get; init; }
         public float Time { get; init; }
+        public int GunAmmo { get; init; }
+        public int MissilesRemaining { get; init; }
+        public int BombsRemaining { get; init; }
+        public float HitMarker { get; init; }         // 0..1 flash intensity
+        public Vector2 VirtualStick { get; init; }    // -1..1 virtual stick deflection
 
-        public static CockpitTelemetry FromFlight(FlightPhysics flight, float groundHeight, float terrainOffsetY, bool crashed, float time)
+        public static CockpitTelemetry FromFlight(
+            FlightPhysics flight,
+            float groundHeight,
+            float terrainOffsetY,
+            bool crashed,
+            float time,
+            CombatSimulation? combat = null,
+            Vector2 virtualStick = default)
         {
             float pitch = MathF.Asin(Math.Clamp(flight.Forward.Y, -1f, 1f));
             float roll = flight.BankAngle;
@@ -36,7 +48,12 @@ namespace GPR202_Assessment3
                 EnginePower = crashed ? 0f : flight.EnginePower,
                 StallWarning = crashed ? 0f : flight.StallWarning,
                 Crashed = crashed,
-                Time = time
+                Time = time,
+                GunAmmo = combat?.GunAmmo ?? 0,
+                MissilesRemaining = combat?.MissilesRemaining ?? 0,
+                BombsRemaining = combat?.BombsRemaining ?? 0,
+                HitMarker = combat != null ? Math.Clamp(combat.HitMarkerTimer / 0.22f, 0f, 1f) : 0f,
+                VirtualStick = virtualStick
             };
         }
     }
@@ -47,6 +64,7 @@ namespace GPR202_Assessment3
     public sealed class CockpitHud : IDisposable
     {
         private int program;
+        private int crosshairProgram;
         private int vao;
         private bool disposed;
 
@@ -62,6 +80,95 @@ namespace GPR202_Assessment3
         private readonly int enginePowerLoc;
         private readonly int stallWarningLoc;
         private readonly int timeLoc;
+        private readonly int gunAmmoLoc;
+        private readonly int missilesLoc;
+        private readonly int bombsLoc;
+
+        private readonly int crossViewportLoc;
+        private readonly int crossSizeLoc;
+        private readonly int crossHitLoc;
+        private readonly int crossStickLoc;
+
+        private const string CrosshairVertexShader = @"#version 330 core
+            uniform vec2 uViewport;
+            uniform float uSize;
+            out vec2 vPx;
+            void main()
+            {
+                const vec2 corners[6] = vec2[6](
+                    vec2(-1.0, -1.0), vec2( 1.0, -1.0), vec2( 1.0,  1.0),
+                    vec2(-1.0, -1.0), vec2( 1.0,  1.0), vec2(-1.0,  1.0)
+                );
+                vec2 c = corners[gl_VertexID];
+                vPx = c * uSize;
+                vec2 px = uViewport * 0.5 + vPx;
+                gl_Position = vec4((px / uViewport) * 2.0 - 1.0, 0.0, 1.0);
+            }";
+
+        private const string CrosshairFragmentShader = @"#version 330 core
+            in vec2 vPx;
+            out vec4 fragColor;
+            uniform float uHitMarker;
+            uniform vec2 uStick;
+
+            float sdSegment(vec2 p, vec2 a, vec2 b)
+            {
+                vec2 pa = p - a, ba = b - a;
+                float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+                return length(pa - ba * h);
+            }
+
+            void main()
+            {
+                vec2 p = vPx;
+                float r = length(p);
+
+                // Subtle outer aiming ring (r = 22 px)
+                float dRing = abs(r - 22.0) - 0.85;
+                // Four crisp cardinal reticle ticks with center gap
+                float dH = sdSegment(vec2(abs(p.x), p.y), vec2(7.0, 0.0), vec2(17.5, 0.0)) - 1.0;
+                float dV = sdSegment(vec2(p.x, abs(p.y)), vec2(0.0, 7.0), vec2(0.0, 17.5)) - 1.0;
+                // Center aim pip
+                float dDot = r - 1.8;
+
+                float dMain = min(min(dH, dV), dDot);
+                float outline = (1.0 - smoothstep(0.4, 2.0, min(dMain, dRing))) * 0.55;
+                float core = 1.0 - smoothstep(-0.6, 0.8, dMain);
+                float ring = (1.0 - smoothstep(-0.6, 0.8, dRing)) * 0.55;
+
+                vec3 reticleCol = vec3(0.42, 1.0, 0.55);
+                vec3 col = vec3(0.02, 0.04, 0.03);
+                float alpha = outline;
+
+                float bright = max(core, ring);
+                col = mix(col, reticleCol, bright);
+                alpha = max(alpha, bright * 0.9);
+
+                // Subtle virtual-stick deflection indicator (shows stick offset while cursor is grabbed)
+                vec2 stickPx = clamp(uStick, vec2(-1.0), vec2(1.0)) * 52.0;
+                if (length(stickPx) > 3.0)
+                {
+                    float dLine = sdSegment(p, vec2(0.0), stickPx) - 0.7;
+                    float lineMask = (1.0 - smoothstep(-0.5, 0.9, dLine)) * 0.25;
+                    float dStickRing = abs(length(p - stickPx) - 4.5) - 0.95;
+                    float stickMask = (1.0 - smoothstep(-0.5, 0.9, dStickRing)) * 0.75;
+                    col = mix(col, vec3(0.85, 0.96, 1.0), max(lineMask, stickMask));
+                    alpha = max(alpha, max(lineMask, stickMask));
+                }
+
+                // Diagonal hit-confirmation X flash
+                if (uHitMarker > 0.01)
+                {
+                    vec2 ap = abs(p);
+                    float dHit = sdSegment(ap, vec2(6.5, 6.5), vec2(15.0, 15.0)) - 1.35;
+                    float hitMask = (1.0 - smoothstep(-0.6, 0.9, dHit)) * uHitMarker;
+                    col = mix(col, vec3(1.0, 0.36, 0.16), hitMask);
+                    alpha = max(alpha, hitMask);
+                }
+
+                if (alpha <= 0.001) discard;
+                fragColor = vec4(col, alpha);
+            }";
 
         private const string VertexShader = @"#version 330 core
             uniform vec2 uViewport;
@@ -71,12 +178,12 @@ namespace GPR202_Assessment3
 
             void main()
             {
-                // Two-triangle quad covering panel local coords x in [-4.15, 4.15], y in [-1.28, 1.38]
+                // Two-triangle quad covering panel local coords x in [-4.15, 4.15], y in [-1.62, 1.38]
                 const vec2 corners[6] = vec2[6](
-                    vec2(-4.15, -1.28),
-                    vec2( 4.15, -1.28),
+                    vec2(-4.15, -1.62),
+                    vec2( 4.15, -1.62),
                     vec2( 4.15,  1.38),
-                    vec2(-4.15, -1.28),
+                    vec2(-4.15, -1.62),
                     vec2( 4.15,  1.38),
                     vec2(-4.15,  1.38)
                 );
@@ -85,7 +192,7 @@ namespace GPR202_Assessment3
                 vPos = local;
 
                 // Anchor bottom of panel slightly above the bottom edge of the viewport.
-                vec2 centerPx = vec2(uViewport.x * 0.5, uScale * 1.28 + 8.0);
+                vec2 centerPx = vec2(uViewport.x * 0.5, uScale * 1.62 + 8.0);
                 vec2 pixelPos = centerPx + local * uScale;
                 vec2 ndc = (pixelPos / uViewport) * 2.0 - 1.0;
                 gl_Position = vec4(ndc, 0.0, 1.0);
@@ -106,6 +213,9 @@ namespace GPR202_Assessment3
             uniform float uEnginePower;
             uniform float uStallWarning;
             uniform float uTime;
+            uniform int uGunAmmo;
+            uniform int uMissiles;
+            uniform int uBombs;
 
             const float PI = 3.14159265359;
             const float TWO_PI = 6.28318530718;
@@ -216,14 +326,18 @@ namespace GPR202_Assessment3
 
             // Letter glyph constants
             const int G_A = 11245;
+            const int G_B = 27566;
+            const int G_G = 31087;
             const int G_H = 23533;
             const int G_I = 29847;
             const int G_L = 18727;
             const int G_M = 24429;
+            const int G_N = 31597;
             const int G_O = 31599;
             const int G_R = 27565;
             const int G_S = 31183;
             const int G_T = 29842;
+            const int G_U = 23407;
             const int G_V = 23402;
             const int G_W = 23413;
 
@@ -587,12 +701,64 @@ namespace GPR202_Assessment3
                 return vec4(outRgb, outA);
             }
 
+            // --- Weapon & Ammo Status Strip (Bottom of Dash Cowl) ---
+            vec4 RenderWeaponStrip(vec2 p, float aa)
+            {
+                vec2 center = vec2(0.0, -1.36);
+                vec2 lp = p - center;
+                float dStrip = sdRoundedBox(lp, vec2(3.65, 0.19), 0.08);
+                float stripMask = 1.0 - smoothstep(-aa, aa, dStrip);
+                if (stripMask <= 0.0) return vec4(0.0);
+
+                float dBorder = abs(dStrip) - 0.015;
+                vec3 col = mix(vec3(0.04, 0.05, 0.065), vec3(0.25, 0.29, 0.35), 1.0 - smoothstep(-aa, aa, dBorder));
+
+                // Left bay: Machine gun ammo (GUN 400)
+                float gunLbl = DrawLabel3(lp, vec2(-2.62, 0.0), 0.15, G_G, G_U, G_N);
+                col = mix(col, vec3(0.74, 0.79, 0.86), gunLbl);
+                float gunNum = DrawNumber(lp, vec2(-1.90, 0.0), 0.17, uGunAmmo, 3);
+                vec3 gunCol = uGunAmmo == 0 ? vec3(0.95, 0.26, 0.22) : (uGunAmmo <= 80 ? vec3(0.98, 0.72, 0.18) : vec3(0.96, 0.97, 0.99));
+                col = mix(col, gunCol, gunNum);
+
+                // Center bay: 6 Missiles (MSL + 6 pips + count)
+                float mslLbl = DrawLabel3(lp, vec2(-0.88, 0.0), 0.15, G_M, G_S, G_L);
+                col = mix(col, vec3(0.74, 0.79, 0.86), mslLbl);
+                for (int i = 0; i < 6; i++)
+                {
+                    vec2 pipPos = vec2(-0.42 + float(i) * 0.17, 0.0);
+                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.055, 0.095), 0.02);
+                    bool loaded = i < uMissiles;
+                    vec3 pipCol = loaded ? vec3(1.0, 0.62, 0.16) : vec3(0.14, 0.16, 0.20);
+                    col = mix(col, pipCol, 1.0 - smoothstep(-aa, aa, dPip));
+                }
+                float mslNum = DrawNumber(lp, vec2(0.72, 0.0), 0.17, uMissiles, 1);
+                vec3 mslNumCol = uMissiles == 0 ? vec3(0.95, 0.26, 0.22) : vec3(1.0, 0.80, 0.45);
+                col = mix(col, mslNumCol, mslNum);
+
+                // Right bay: 2 Large Bombs (BMB + 2 pips + count)
+                float bmbLbl = DrawLabel3(lp, vec2(1.70, 0.0), 0.15, G_B, G_M, G_B);
+                col = mix(col, vec3(0.74, 0.79, 0.86), bmbLbl);
+                for (int i = 0; i < 2; i++)
+                {
+                    vec2 pipPos = vec2(2.24 + float(i) * 0.26, 0.0);
+                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.095, 0.095), 0.04);
+                    bool loaded = i < uBombs;
+                    vec3 pipCol = loaded ? vec3(0.96, 0.34, 0.24) : vec3(0.14, 0.16, 0.20);
+                    col = mix(col, pipCol, 1.0 - smoothstep(-aa, aa, dPip));
+                }
+                float bmbNum = DrawNumber(lp, vec2(2.86, 0.0), 0.17, uBombs, 1);
+                vec3 bmbNumCol = uBombs == 0 ? vec3(0.95, 0.26, 0.22) : vec3(1.0, 0.60, 0.48);
+                col = mix(col, bmbNumCol, bmbNum);
+
+                return vec4(col, stripMask * 0.92);
+            }
+
             void main()
             {
                 float aa = 1.15 / max(uScale, 1.0);
 
                 // Translucent dark cockpit dash cowl backing
-                float dPanel = sdRoundedBox(vPos - vec2(0.0, -0.05), vec2(3.98, 1.16), 0.34);
+                float dPanel = sdRoundedBox(vPos - vec2(0.0, -0.22), vec2(3.98, 1.38), 0.34);
                 float panelMask = 1.0 - smoothstep(-aa, aa, dPanel);
                 float panelBorder = 1.0 - smoothstep(-aa, aa, abs(dPanel) - 0.018);
 
@@ -613,9 +779,12 @@ namespace GPR202_Assessment3
                 vec3 vsiCol = uVerticalSpeed >= 0.0 ? vec3(0.22, 0.80, 0.46) : vec3(0.95, 0.42, 0.22);
                 vec4 vsi = RenderSideBar(vPos, vec2( 3.55, 0.05), 0.125, 0.74, 0.5, vsiNorm, vsiNorm, vsiCol, G_V, G_S, G_I, true, aa);
 
+                // Bottom weapon & ammo readout strip
+                vec4 weapons = RenderWeaponStrip(vPos, aa);
+
                 // Composite layers cleanly (standard source-over)
-                vec4 layers[5] = vec4[5](thr, vsi, asi, alt, att);
-                for (int i = 0; i < 5; i++)
+                vec4 layers[6] = vec4[6](weapons, thr, vsi, asi, alt, att);
+                for (int i = 0; i < 6; i++)
                 {
                     float a = layers[i].a;
                     color = mix(color, layers[i].rgb, a);
@@ -628,22 +797,16 @@ namespace GPR202_Assessment3
 
         public CockpitHud()
         {
-            int vs = 0, fs = 0;
+            int vs = 0, fs = 0, cvs = 0, cfs = 0;
             try
             {
                 vs = CompileShader(ShaderType.VertexShader, VertexShader);
                 fs = CompileShader(ShaderType.FragmentShader, FragmentShader);
-                program = GL.CreateProgram();
-                GL.AttachShader(program, vs);
-                GL.AttachShader(program, fs);
-                GL.LinkProgram(program);
-                GL.GetProgram(program, GetProgramParameterName.LinkStatus, out int linked);
-                if (linked == 0)
-                {
-                    throw new InvalidOperationException("CockpitHud shader link error: " + GL.GetProgramInfoLog(program));
-                }
-                GL.DetachShader(program, vs);
-                GL.DetachShader(program, fs);
+                program = LinkProgram(vs, fs, "CockpitHud");
+
+                cvs = CompileShader(ShaderType.VertexShader, CrosshairVertexShader);
+                cfs = CompileShader(ShaderType.FragmentShader, CrosshairFragmentShader);
+                crosshairProgram = LinkProgram(cvs, cfs, "Crosshair");
 
                 vao = GL.GenVertexArray();
 
@@ -659,6 +822,14 @@ namespace GPR202_Assessment3
                 enginePowerLoc = GL.GetUniformLocation(program, "uEnginePower");
                 stallWarningLoc = GL.GetUniformLocation(program, "uStallWarning");
                 timeLoc = GL.GetUniformLocation(program, "uTime");
+                gunAmmoLoc = GL.GetUniformLocation(program, "uGunAmmo");
+                missilesLoc = GL.GetUniformLocation(program, "uMissiles");
+                bombsLoc = GL.GetUniformLocation(program, "uBombs");
+
+                crossViewportLoc = GL.GetUniformLocation(crosshairProgram, "uViewport");
+                crossSizeLoc = GL.GetUniformLocation(crosshairProgram, "uSize");
+                crossHitLoc = GL.GetUniformLocation(crosshairProgram, "uHitMarker");
+                crossStickLoc = GL.GetUniformLocation(crosshairProgram, "uStick");
             }
             catch
             {
@@ -669,7 +840,27 @@ namespace GPR202_Assessment3
             {
                 if (vs != 0) GL.DeleteShader(vs);
                 if (fs != 0) GL.DeleteShader(fs);
+                if (cvs != 0) GL.DeleteShader(cvs);
+                if (cfs != 0) GL.DeleteShader(cfs);
             }
+        }
+
+        private static int LinkProgram(int vs, int fs, string label)
+        {
+            int p = GL.CreateProgram();
+            GL.AttachShader(p, vs);
+            GL.AttachShader(p, fs);
+            GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked == 0)
+            {
+                string log = GL.GetProgramInfoLog(p);
+                GL.DeleteProgram(p);
+                throw new InvalidOperationException($"{label} shader link error: {log}");
+            }
+            GL.DetachShader(p, vs);
+            GL.DetachShader(p, fs);
+            return p;
         }
 
         private static int CompileShader(ShaderType type, string source)
@@ -684,12 +875,13 @@ namespace GPR202_Assessment3
             throw new InvalidOperationException($"CockpitHud {type} compile error: {log}");
         }
 
-        public void Draw(in CockpitTelemetry telemetry, int framebufferWidth, int framebufferHeight)
+        public void Draw(in CockpitTelemetry telemetry, int framebufferWidth, int framebufferHeight, bool showInstruments = true, bool showCrosshair = true)
         {
             if (disposed || framebufferWidth <= 0 || framebufferHeight <= 0) return;
+            if (!showInstruments && !showCrosshair) return;
 
             // Keep instrument cluster compact and proportional across all aspect ratios.
-            float scale = Math.Clamp(MathF.Min(framebufferHeight * 0.088f, framebufferWidth * 0.055f), 48f, 108f);
+            float scale = Math.Clamp(MathF.Min(framebufferHeight * 0.084f, framebufferWidth * 0.053f), 46f, 102f);
 
             bool depthTest = GL.IsEnabled(EnableCap.DepthTest);
             bool blend = GL.IsEnabled(EnableCap.Blend);
@@ -703,22 +895,38 @@ namespace GPR202_Assessment3
             try
             {
                 GL.Viewport(0, 0, framebufferWidth, framebufferHeight);
-                GL.UseProgram(program);
-                GL.Uniform2(viewportLoc, (float)framebufferWidth, (float)framebufferHeight);
-                GL.Uniform1(scaleLoc, scale);
-                GL.Uniform1(airspeedLoc, Math.Max(0f, telemetry.Airspeed));
-                GL.Uniform1(pitchLoc, telemetry.PitchRadians);
-                GL.Uniform1(rollLoc, telemetry.RollRadians);
-                GL.Uniform1(altitudeLoc, Math.Max(0f, telemetry.AltitudeMsl));
-                GL.Uniform1(aglLoc, Math.Max(0f, telemetry.AltitudeAgl));
-                GL.Uniform1(verticalSpeedLoc, telemetry.VerticalSpeed);
-                GL.Uniform1(throttleLoc, Math.Clamp(telemetry.Throttle, 0f, 1f));
-                GL.Uniform1(enginePowerLoc, Math.Clamp(telemetry.EnginePower, 0f, 1f));
-                GL.Uniform1(stallWarningLoc, Math.Clamp(telemetry.StallWarning, 0f, 1f));
-                GL.Uniform1(timeLoc, telemetry.Time);
-
                 GL.BindVertexArray(vao);
-                GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+
+                if (showInstruments)
+                {
+                    GL.UseProgram(program);
+                    GL.Uniform2(viewportLoc, (float)framebufferWidth, (float)framebufferHeight);
+                    GL.Uniform1(scaleLoc, scale);
+                    GL.Uniform1(airspeedLoc, Math.Max(0f, telemetry.Airspeed));
+                    GL.Uniform1(pitchLoc, telemetry.PitchRadians);
+                    GL.Uniform1(rollLoc, telemetry.RollRadians);
+                    GL.Uniform1(altitudeLoc, Math.Max(0f, telemetry.AltitudeMsl));
+                    GL.Uniform1(aglLoc, Math.Max(0f, telemetry.AltitudeAgl));
+                    GL.Uniform1(verticalSpeedLoc, telemetry.VerticalSpeed);
+                    GL.Uniform1(throttleLoc, Math.Clamp(telemetry.Throttle, 0f, 1f));
+                    GL.Uniform1(enginePowerLoc, Math.Clamp(telemetry.EnginePower, 0f, 1f));
+                    GL.Uniform1(stallWarningLoc, Math.Clamp(telemetry.StallWarning, 0f, 1f));
+                    GL.Uniform1(timeLoc, telemetry.Time);
+                    GL.Uniform1(gunAmmoLoc, Math.Max(0, telemetry.GunAmmo));
+                    GL.Uniform1(missilesLoc, Math.Max(0, telemetry.MissilesRemaining));
+                    GL.Uniform1(bombsLoc, Math.Max(0, telemetry.BombsRemaining));
+                    GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+                }
+
+                if (showCrosshair && !telemetry.Crashed)
+                {
+                    GL.UseProgram(crosshairProgram);
+                    GL.Uniform2(crossViewportLoc, (float)framebufferWidth, (float)framebufferHeight);
+                    GL.Uniform1(crossSizeLoc, 66f);
+                    GL.Uniform1(crossHitLoc, Math.Clamp(telemetry.HitMarker, 0f, 1f));
+                    GL.Uniform2(crossStickLoc, telemetry.VirtualStick.X, telemetry.VirtualStick.Y);
+                    GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+                }
             }
             finally
             {
@@ -735,8 +943,9 @@ namespace GPR202_Assessment3
             if (disposed) return;
             disposed = true;
             if (program != 0) GL.DeleteProgram(program);
+            if (crosshairProgram != 0) GL.DeleteProgram(crosshairProgram);
             if (vao != 0) GL.DeleteVertexArray(vao);
-            program = vao = 0;
+            program = crosshairProgram = vao = 0;
         }
     }
 }

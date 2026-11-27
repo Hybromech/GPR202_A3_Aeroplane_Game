@@ -9,6 +9,11 @@ public sealed class ParticleSystem
     public Particle[] Particles { get; } = new Particle[256];
     public int Count { get; private set; }
     public void Clear() => Count = 0;
+    public void Emit(Vector3 position, Vector3 velocity, float lifetime)
+    {
+        int idx = Count < Particles.Length ? Count++ : 0;
+        Particles[idx] = new Particle { Position = position, Velocity = velocity, Age = 0f, Lifetime = Math.Max(0.05f, lifetime) };
+    }
     public void Explode(Vector3 position)
     {
         Count = Particles.Length;

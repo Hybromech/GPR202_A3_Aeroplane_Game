@@ -8,5 +8,7 @@ public sealed class AudioSettings
     public float ExplosionVolume { get; set; } = 0.9f;
     public float PopVolume { get; set; } = 0.8f;
     public float StallWarningVolume { get; set; } = 0.35f;
+    public float GunVolume { get; set; } = 0.55f;
+    public float MissileVolume { get; set; } = 0.7f;
     public float MusicVolume { get; set; } = 0.5f;
 }

@@ -18,10 +18,32 @@ namespace GPR202_Assessment3
 {
     public class Plane : GameObject
     {
+        public struct OrdnanceSlot
+        {
+            public int IndexOffset;
+            public int IndexCount;
+            public Vector3 LocalCenter;
+            public bool Mounted;
+        }
+
+        public const int MissileCount = 6;
+        public const int BombCount = 2;
+
+        // Two machine gun barrels per wing (4 total), matching plane.obj leading-edge guns.
+        public static readonly Vector3[] WingGunMuzzles =
+        {
+            new Vector3(-2.77f, 0.50f, 0.98f),
+            new Vector3(-2.31f, 0.50f, 1.00f),
+            new Vector3( 2.24f, 0.48f, 0.90f),
+            new Vector3( 2.70f, 0.48f, 0.86f)
+        };
+
         List<VertexData> vertexdata;
         List<uint> indices;
         private int airframeIndexCount;
         private int propellerIndexCount;
+        private readonly OrdnanceSlot[] missileSlots = new OrdnanceSlot[MissileCount];
+        private readonly OrdnanceSlot[] bombSlots = new OrdnanceSlot[BombCount];
         private float propellerAngle;
         private static readonly Vector3 PropellerPivot = new Vector3(-0.00258f, 1.22923f, 3.4f);
         private readonly List<Vector3> normals = new();
@@ -341,6 +363,19 @@ namespace GPR202_Assessment3
             * Matrix4.CreateTranslation(PropellerPivot)
             * ComputeModelMatrix();
 
+        public Matrix4 ModelMatrix => ComputeModelMatrix();
+
+        public OrdnanceSlot GetMissileSlot(int index) => missileSlots[index];
+        public OrdnanceSlot GetBombSlot(int index) => bombSlots[index];
+        public void SetMissileMounted(int index, bool mounted) => missileSlots[index].Mounted = mounted;
+        public void SetBombMounted(int index, bool mounted) => bombSlots[index].Mounted = mounted;
+
+        public void ResetOrdnance()
+        {
+            for (int i = 0; i < missileSlots.Length; i++) missileSlots[i].Mounted = true;
+            for (int i = 0; i < bombSlots.Length; i++) bombSlots[i].Mounted = true;
+        }
+
         private Matrix4 ComputeModelMatrix()
         {
             return Matrix4.Identity
@@ -361,15 +396,48 @@ namespace GPR202_Assessment3
 
             GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            DrawMountedOrdnanceElements();
             shadowMap.ApplyDepthModel(ComputePropellerMatrix());
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
             GL.BindVertexArray(0);
         }
 
-        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap = null)
+        public void DrawOrdnanceDepth(ShadowMap shadowMap, bool isBomb, int slotIndex, Vector3 worldPos, Matrix4 worldOrientation)
         {
-            model = ComputeModelMatrix();
+            if (shadowMap == null) return;
+            OrdnanceSlot slot = isBomb ? bombSlots[slotIndex] : missileSlots[slotIndex];
+            if (slot.IndexCount <= 0) return;
 
+            Matrix4 ordModel = Matrix4.CreateTranslation(-slot.LocalCenter)
+                * worldOrientation
+                * Matrix4.CreateTranslation(worldPos);
+            shadowMap.ApplyDepthModel(ordModel);
+
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, slot.IndexCount, DrawElementsType.UnsignedInt, slot.IndexOffset * sizeof(uint));
+            GL.BindVertexArray(0);
+        }
+
+        private void DrawMountedOrdnanceElements()
+        {
+            for (int i = 0; i < missileSlots.Length; i++)
+            {
+                if (missileSlots[i].Mounted && missileSlots[i].IndexCount > 0)
+                {
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, missileSlots[i].IndexCount, DrawElementsType.UnsignedInt, missileSlots[i].IndexOffset * sizeof(uint));
+                }
+            }
+            for (int i = 0; i < bombSlots.Length; i++)
+            {
+                if (bombSlots[i].Mounted && bombSlots[i].IndexCount > 0)
+                {
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, bombSlots[i].IndexCount, DrawElementsType.UnsignedInt, bombSlots[i].IndexOffset * sizeof(uint));
+                }
+            }
+        }
+
+        private void BindPlaneShaderAndState(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap)
+        {
             GL.UseProgram(planeShaderProgram);
 
             sunLight?.ApplyToShader(planeShaderProgram, viewPos);
@@ -385,7 +453,6 @@ namespace GPR202_Assessment3
                 ? Math.Max(0f, bloomSettings!.PlaneBloomIntensity) : 0f);
 
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
-            GL.UniformMatrix4(modelLocation, true, ref model);
             GL.UniformMatrix4(viewLocation, true, ref view);
             GL.UniformMatrix4(projectionLocation, true, ref proj);
 
@@ -418,12 +485,36 @@ namespace GPR202_Assessment3
 
                 shadowMap.BindDepthMap(TextureUnit.Texture1);
             }
+        }
+
+        public void Draw(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap = null)
+        {
+            model = ComputeModelMatrix();
+            BindPlaneShaderAndState(view, proj, sunLight, viewPos, ambientLight, material, shadowMap);
+            GL.UniformMatrix4(modelLocation, true, ref model);
 
             GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            DrawMountedOrdnanceElements();
             Matrix4 propellerModel = ComputePropellerMatrix();
             GL.UniformMatrix4(modelLocation, true, ref propellerModel);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
+            GL.BindVertexArray(0);
+        }
+
+        public void DrawOrdnance(bool isBomb, int slotIndex, Vector3 worldPos, Matrix4 worldOrientation, Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap = null)
+        {
+            OrdnanceSlot slot = isBomb ? bombSlots[slotIndex] : missileSlots[slotIndex];
+            if (slot.IndexCount <= 0) return;
+
+            BindPlaneShaderAndState(view, proj, sunLight, viewPos, ambientLight, material, shadowMap);
+            Matrix4 ordModel = Matrix4.CreateTranslation(-slot.LocalCenter)
+                * worldOrientation
+                * Matrix4.CreateTranslation(worldPos);
+            GL.UniformMatrix4(modelLocation, true, ref ordModel);
+
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, slot.IndexCount, DrawElementsType.UnsignedInt, slot.IndexOffset * sizeof(uint));
             GL.BindVertexArray(0);
         }
 
@@ -539,6 +630,7 @@ namespace GPR202_Assessment3
             vertexdata = new List<VertexData>();
             indices = new List<uint>();
             var propellerIndices = new List<uint>();
+            var airframeTris = new List<(uint A, uint B, uint C)>();
             foreach (var mesh in model.Meshes)
             {
                 uint first = (uint)vertexdata.Count;
@@ -551,15 +643,28 @@ namespace GPR202_Assessment3
                     vertexdata.Add(new VertexData(v.X, v.Y, v.Z, uv.X, uv.Y));
                     normals.Add(new Vector3(n.X, n.Y, n.Z));
                 }
-                var destination = isPropeller ? propellerIndices : indices;
                 foreach (var face in mesh.Faces)
-                    foreach (int index in face.Indices) destination.Add(first + (uint)index);
+                {
+                    if (isPropeller)
+                    {
+                        foreach (int index in face.Indices) propellerIndices.Add(first + (uint)index);
+                    }
+                    else if (face.Indices.Count == 3)
+                    {
+                        airframeTris.Add((first + (uint)face.Indices[0], first + (uint)face.Indices[1], first + (uint)face.Indices[2]));
+                    }
+                    else
+                    {
+                        foreach (int index in face.Indices) indices.Add(first + (uint)index);
+                    }
+                }
             }
-            airframeIndexCount = indices.Count;
-            propellerIndexCount = propellerIndices.Count;
+
+            // Separate the 6 underwing missile submodels and 2 underwing bomb submodels by
+            // topological connected components (welded by quantized vertex position).
+            PartitionOrdnanceSubmodels(airframeTris, propellerIndices);
             if (airframeIndexCount == 0 || propellerIndexCount == 0)
                 throw new InvalidDataException("Plane model must contain Airframe and Propeller meshes.");
-            indices.AddRange(propellerIndices);
 
             // Load Texture
             textureHandle = GL.GenTexture();
@@ -585,6 +690,220 @@ namespace GPR202_Assessment3
             Console.WriteLine("Succesfully loaded " + modelName + " with " + model.Meshes[0].Vertices.Count + " vertices.");
 
             importer.Dispose();
+        }
+
+        private void PartitionOrdnanceSubmodels(List<(uint A, uint B, uint C)> airframeTris, List<uint> propellerIndices)
+        {
+            // Weld identical 3D positions so Assimp normal/UV splits stay topologically connected.
+            var posToWeld = new Dictionary<(int, int, int), int>(vertexdata.Count);
+            var vertToWeld = new int[vertexdata.Count];
+            for (int i = 0; i < vertexdata.Count; i++)
+            {
+                var v = vertexdata[i];
+                var key = ((int)MathF.Round(v.x * 1000f), (int)MathF.Round(v.y * 1000f), (int)MathF.Round(v.z * 1000f));
+                if (!posToWeld.TryGetValue(key, out int id))
+                {
+                    id = posToWeld.Count;
+                    posToWeld[key] = id;
+                }
+                vertToWeld[i] = id;
+            }
+
+            int weldCount = posToWeld.Count;
+            var parent = new int[weldCount];
+            for (int i = 0; i < weldCount; i++) parent[i] = i;
+
+            int Find(int x)
+            {
+                while (parent[x] != x)
+                {
+                    parent[x] = parent[parent[x]];
+                    x = parent[x];
+                }
+                return x;
+            }
+
+            foreach (var tri in airframeTris)
+            {
+                int ra = Find(vertToWeld[tri.A]);
+                int rb = Find(vertToWeld[tri.B]);
+                int rc = Find(vertToWeld[tri.C]);
+                if (rb != ra) parent[rb] = ra;
+                if (rc != ra) parent[rc] = ra;
+            }
+
+            // Compute AABB and face count per connected component.
+            var compBounds = new Dictionary<int, (Vector3 Min, Vector3 Max, int Faces)>();
+            foreach (var tri in airframeTris)
+            {
+                int root = Find(vertToWeld[tri.A]);
+                if (!compBounds.TryGetValue(root, out var b))
+                {
+                    b = (new Vector3(float.PositiveInfinity), new Vector3(float.NegativeInfinity), 0);
+                }
+                void Include(uint vi)
+                {
+                    var vd = vertexdata[(int)vi];
+                    var p = new Vector3(vd.x, vd.y, vd.z);
+                    b.Min = Vector3.ComponentMin(b.Min, p);
+                    b.Max = Vector3.ComponentMax(b.Max, p);
+                }
+                Include(tri.A);
+                Include(tri.B);
+                Include(tri.C);
+                b.Faces++;
+                compBounds[root] = b;
+            }
+
+            // Tight local-space bounding boxes for the 6 missiles and 2 bombs in plane.obj.
+            (Vector3 Min, Vector3 Max)[] missileBoxes =
+            {
+                (new Vector3(-4.63f,  0.00f, -0.76f), new Vector3(-4.27f, 0.365f, 1.18f)), // Left Outer
+                (new Vector3(-4.27f,  0.00f, -0.76f), new Vector3(-3.93f, 0.365f, 1.18f)), // Left Mid
+                (new Vector3(-3.93f,  0.00f, -0.76f), new Vector3(-3.60f, 0.365f, 1.18f)), // Left Inner
+                (new Vector3( 3.50f, -0.01f, -1.03f), new Vector3( 3.84f, 0.335f, 0.92f)), // Right Inner
+                (new Vector3( 3.84f, -0.01f, -1.03f), new Vector3( 4.18f, 0.335f, 0.92f)), // Right Mid
+                (new Vector3( 4.18f, -0.01f, -1.03f), new Vector3( 4.53f, 0.335f, 0.92f)), // Right Outer
+            };
+
+            (Vector3 Min, Vector3 Max)[] bombBoxes =
+            {
+                (new Vector3(-3.68f, -0.50f, -1.15f), new Vector3(-2.98f, 0.26f, 1.08f)), // Left Bomb
+                (new Vector3( 2.86f, -0.52f, -1.28f), new Vector3( 3.56f, 0.24f, 0.95f)), // Right Bomb
+            };
+
+            static bool FitsInside(Vector3 min, Vector3 max, Vector3 boxMin, Vector3 boxMax) =>
+                min.X >= boxMin.X && max.X <= boxMax.X &&
+                min.Y >= boxMin.Y && max.Y <= boxMax.Y &&
+                min.Z >= boxMin.Z && max.Z <= boxMax.Z;
+
+            // Map each component root to: 0 = airframe, 1..6 = missile[k-1], 10..11 = bomb[k-10].
+            var compBucket = new Dictionary<int, int>(compBounds.Count);
+            foreach (var kv in compBounds)
+            {
+                int bucket = 0;
+                var (min, max, faces) = kv.Value;
+                if (faces >= 16)
+                {
+                    for (int bi = 0; bi < BombCount; bi++)
+                    {
+                        if (FitsInside(min, max, bombBoxes[bi].Min, bombBoxes[bi].Max))
+                        {
+                            bucket = 10 + bi;
+                            break;
+                        }
+                    }
+                }
+                if (bucket == 0)
+                {
+                    for (int mi = 0; mi < MissileCount; mi++)
+                    {
+                        if (FitsInside(min, max, missileBoxes[mi].Min, missileBoxes[mi].Max))
+                        {
+                            bucket = 1 + mi;
+                            break;
+                        }
+                    }
+                }
+                compBucket[kv.Key] = bucket;
+            }
+
+            var missileIndexLists = new List<uint>[MissileCount];
+            var missileMins = new Vector3[MissileCount];
+            var missileMaxs = new Vector3[MissileCount];
+            for (int i = 0; i < MissileCount; i++)
+            {
+                missileIndexLists[i] = new List<uint>();
+                missileMins[i] = new Vector3(float.PositiveInfinity);
+                missileMaxs[i] = new Vector3(float.NegativeInfinity);
+            }
+
+            var bombIndexLists = new List<uint>[BombCount];
+            var bombMins = new Vector3[BombCount];
+            var bombMaxs = new Vector3[BombCount];
+            for (int i = 0; i < BombCount; i++)
+            {
+                bombIndexLists[i] = new List<uint>();
+                bombMins[i] = new Vector3(float.PositiveInfinity);
+                bombMaxs[i] = new Vector3(float.NegativeInfinity);
+            }
+
+            void TrackBounds(ref Vector3 min, ref Vector3 max, uint vi)
+            {
+                var vd = vertexdata[(int)vi];
+                var p = new Vector3(vd.x, vd.y, vd.z);
+                min = Vector3.ComponentMin(min, p);
+                max = Vector3.ComponentMax(max, p);
+            }
+
+            foreach (var tri in airframeTris)
+            {
+                int bucket = compBucket[Find(vertToWeld[tri.A])];
+                if (bucket >= 1 && bucket <= MissileCount)
+                {
+                    int mi = bucket - 1;
+                    missileIndexLists[mi].Add(tri.A);
+                    missileIndexLists[mi].Add(tri.B);
+                    missileIndexLists[mi].Add(tri.C);
+                    TrackBounds(ref missileMins[mi], ref missileMaxs[mi], tri.A);
+                    TrackBounds(ref missileMins[mi], ref missileMaxs[mi], tri.B);
+                    TrackBounds(ref missileMins[mi], ref missileMaxs[mi], tri.C);
+                }
+                else if (bucket >= 10 && bucket < 10 + BombCount)
+                {
+                    int bi = bucket - 10;
+                    bombIndexLists[bi].Add(tri.A);
+                    bombIndexLists[bi].Add(tri.B);
+                    bombIndexLists[bi].Add(tri.C);
+                    TrackBounds(ref bombMins[bi], ref bombMaxs[bi], tri.A);
+                    TrackBounds(ref bombMins[bi], ref bombMaxs[bi], tri.B);
+                    TrackBounds(ref bombMins[bi], ref bombMaxs[bi], tri.C);
+                }
+                else
+                {
+                    indices.Add(tri.A);
+                    indices.Add(tri.B);
+                    indices.Add(tri.C);
+                }
+            }
+
+            airframeIndexCount = indices.Count;
+            propellerIndexCount = propellerIndices.Count;
+            indices.AddRange(propellerIndices);
+
+            for (int i = 0; i < MissileCount; i++)
+            {
+                int offset = indices.Count;
+                indices.AddRange(missileIndexLists[i]);
+                Vector3 center = missileIndexLists[i].Count > 0
+                    ? (missileMins[i] + missileMaxs[i]) * 0.5f
+                    : (missileBoxes[i].Min + missileBoxes[i].Max) * 0.5f;
+                missileSlots[i] = new OrdnanceSlot
+                {
+                    IndexOffset = offset,
+                    IndexCount = missileIndexLists[i].Count,
+                    LocalCenter = center,
+                    Mounted = true
+                };
+            }
+
+            for (int i = 0; i < BombCount; i++)
+            {
+                int offset = indices.Count;
+                indices.AddRange(bombIndexLists[i]);
+                Vector3 center = bombIndexLists[i].Count > 0
+                    ? (bombMins[i] + bombMaxs[i]) * 0.5f
+                    : (bombBoxes[i].Min + bombBoxes[i].Max) * 0.5f;
+                bombSlots[i] = new OrdnanceSlot
+                {
+                    IndexOffset = offset,
+                    IndexCount = bombIndexLists[i].Count,
+                    LocalCenter = center,
+                    Mounted = true
+                };
+            }
+
+            Console.WriteLine($"Extracted ordnance submodels: 6 missiles ({string.Join(",", missileIndexLists.Select(l => l.Count / 3))} tris), 2 bombs ({string.Join(",", bombIndexLists.Select(l => l.Count / 3))} tris).");
         }
     }
 }

@@ -51,6 +51,8 @@ public sealed class GameAudio : IDisposable
     public void SetVictory(bool won) => mix.Victory = won;
     public void PlayBalloonPop() => mix.PlayBalloonPop();
     public void PlayExplosion() => mix.PlayExplosion();
+    public void PlayGunShot() => mix.PlayGunShot();
+    public void PlayMissileLaunch() => mix.PlayMissileLaunch();
 
     public void Dispose()
     {
@@ -85,6 +87,8 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
     private readonly CachedAudioClip? explosionClip;
     private readonly CachedAudioClip? warningClip;
     private readonly CachedAudioClip? popClip;
+    private readonly CachedAudioClip? gunClip;
+    private readonly CachedAudioClip? missileClip;
     private readonly StreamingWavTrack[] musicTracks;
     private readonly double[] trackGains = new double[TrackCount];
     private readonly float[][] trackBuffers = new float[TrackCount][];
@@ -127,6 +131,14 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
     private readonly double[] popPos = new double[8];
     private int nextPop;
 
+    private int pendingGunShots;
+    private readonly double[] gunPos = new double[8];
+    private int nextGun;
+
+    private int pendingMissiles;
+    private readonly double[] missilePos = new double[4];
+    private int nextMissile;
+
     private double enginePos;
     private double engineThrottle = 0.65;
     private double engineGain = 1.0;
@@ -144,6 +156,8 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
     {
         this.settings = settings;
         Array.Fill(popPos, -1.0);
+        Array.Fill(gunPos, -1.0);
+        Array.Fill(missilePos, -1.0);
         trackGains[(int)MusicTrack.InGame] = 1.0;
         for (int i = 0; i < TrackCount; i++) trackBuffers[i] = Array.Empty<float>();
 
@@ -151,6 +165,8 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
         explosionClip = CachedAudioClip.Load(ResolveAudioPath(Path.Combine("effects", "explode.wav"), audioDirectory), bakeLoop: false);
         warningClip = CachedAudioClip.Load(ResolveAudioPath(Path.Combine("effects", "warning_beep.wav"), audioDirectory), bakeLoop: false);
         popClip = CachedAudioClip.Load(ResolveAudioPath(Path.Combine("effects", "pop.wav"), audioDirectory), bakeLoop: false);
+        gunClip = CachedAudioClip.Load(ResolveAudioPath(Path.Combine("effects", "gun.wav"), audioDirectory), bakeLoop: false);
+        missileClip = CachedAudioClip.Load(ResolveAudioPath(Path.Combine("effects", "missile.wav"), audioDirectory), bakeLoop: false);
 
         musicTracks = new[]
         {
@@ -163,6 +179,8 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
 
     public void PlayBalloonPop() => Interlocked.Increment(ref pendingPops);
     public void PlayExplosion() => Interlocked.Exchange(ref pendingExplosion, 1);
+    public void PlayGunShot() => Interlocked.Increment(ref pendingGunShots);
+    public void PlayMissileLaunch() => Interlocked.Increment(ref pendingMissiles);
 
     private static string? ResolveAudioPath(string relativePath, string? audioDirectory)
     {
@@ -228,11 +246,27 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
             nextPop = (nextPop + 1) % popPos.Length;
         }
 
+        int gunEvents = Math.Min(gunPos.Length, Interlocked.Exchange(ref pendingGunShots, 0));
+        for (int j = 0; j < gunEvents; j++)
+        {
+            gunPos[nextGun] = 0.0;
+            nextGun = (nextGun + 1) % gunPos.Length;
+        }
+
+        int missileEvents = Math.Min(missilePos.Length, Interlocked.Exchange(ref pendingMissiles, 0));
+        for (int j = 0; j < missileEvents; j++)
+        {
+            missilePos[nextMissile] = 0.0;
+            nextMissile = (nextMissile + 1) % missilePos.Length;
+        }
+
         double masterVol = Math.Clamp(settings.MasterVolume, 0f, 1f);
         double engineVol = Math.Clamp(settings.EngineVolume, 0f, 1f);
         double explosionVol = Math.Clamp(settings.ExplosionVolume, 0f, 1f);
         double popVol = Math.Clamp(settings.PopVolume, 0f, 1f);
         double warningVol = Math.Clamp(settings.StallWarningVolume, 0f, 1f);
+        double gunVol = Math.Clamp(settings.GunVolume, 0f, 1f);
+        double missileVol = Math.Clamp(settings.MissileVolume, 0f, 1f);
         double musicVol = Math.Clamp(settings.MusicVolume, 0f, 1f);
 
         bool canHearAudio = (Focused && settings.Enabled) || focusGain >= 0.00001;
@@ -257,6 +291,8 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
         double warningStep = warningClip != null ? warningClip.SampleRate / (double)OutputSampleRate : 0.0;
         double warningDuration = warningClip != null ? warningClip.FrameCount / (double)warningClip.SampleRate : 0.12;
         double popStep = popClip != null ? popClip.SampleRate / (double)OutputSampleRate : 0.0;
+        double gunStep = gunClip != null ? gunClip.SampleRate / (double)OutputSampleRate : 0.0;
+        double missileStep = missileClip != null ? missileClip.SampleRate / (double)OutputSampleRate : 0.0;
 
         for (int i = 0; i < count; i += 2)
         {
@@ -379,6 +415,96 @@ public sealed class GameAudioMix : ISampleProvider, IDisposable
                     }
                     commonL += pop * popVol;
                     commonR += pop * popVol;
+                }
+            }
+
+            // Wing machine-gun shots (uses effects/gun.wav if present, else short punchy burst).
+            if (gunVol > 0.0)
+            {
+                if (gunClip != null)
+                {
+                    for (int v = 0; v < gunPos.Length; v++)
+                    {
+                        double pos = gunPos[v];
+                        if (pos >= 0.0)
+                        {
+                            if (pos < gunClip.FrameCount)
+                            {
+                                gunClip.SampleClamped(pos, out double gL, out double gR);
+                                commonL += gL * gunVol;
+                                commonR += gR * gunVol;
+                                gunPos[v] = pos + gunStep;
+                            }
+                            else gunPos[v] = -1.0;
+                        }
+                    }
+                }
+                else
+                {
+                    double gun = 0.0;
+                    double n = Noise();
+                    for (int v = 0; v < gunPos.Length; v++)
+                    {
+                        double age = gunPos[v];
+                        if (age >= 0.0)
+                        {
+                            if (age < 0.09)
+                            {
+                                double crack = n * Math.Exp(-age * 55.0) * 0.75;
+                                double thump = Tone(115.0 * Math.Exp(-age * 18.0) + 45.0, age) * Math.Exp(-age * 38.0) * 0.65;
+                                gun += (crack + thump) * Math.Min(1.0, age / 0.0015);
+                                gunPos[v] = age + dt;
+                            }
+                            else gunPos[v] = -1.0;
+                        }
+                    }
+                    commonL += gun * gunVol;
+                    commonR += gun * gunVol;
+                }
+            }
+
+            // Missile launch whoosh (uses effects/missile.wav if present, else rocket ignition hiss).
+            if (missileVol > 0.0)
+            {
+                if (missileClip != null)
+                {
+                    for (int v = 0; v < missilePos.Length; v++)
+                    {
+                        double pos = missilePos[v];
+                        if (pos >= 0.0)
+                        {
+                            if (pos < missileClip.FrameCount)
+                            {
+                                missileClip.SampleClamped(pos, out double mL, out double mR);
+                                commonL += mL * missileVol;
+                                commonR += mR * missileVol;
+                                missilePos[v] = pos + missileStep;
+                            }
+                            else missilePos[v] = -1.0;
+                        }
+                    }
+                }
+                else
+                {
+                    double whoosh = 0.0;
+                    double n = Noise();
+                    for (int v = 0; v < missilePos.Length; v++)
+                    {
+                        double age = missilePos[v];
+                        if (age >= 0.0)
+                        {
+                            if (age < 0.85)
+                            {
+                                double env = Math.Min(1.0, age / 0.04) * Math.Exp(-age * 3.8);
+                                double roar = (n * 0.55 + Tone(95.0 + 120.0 * Math.Exp(-age * 4.0), age) * 0.25) * env;
+                                whoosh += roar;
+                                missilePos[v] = age + dt;
+                            }
+                            else missilePos[v] = -1.0;
+                        }
+                    }
+                    commonL += whoosh * missileVol;
+                    commonR += whoosh * missileVol;
                 }
             }
 

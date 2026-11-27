@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenTK" Version="4.8.2" />
+    <PackageReference Include="AssimpNet" Version="4.1.0" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
+    <Compile Include="../../CombatSystem.cs" Link="CombatSystem.cs" />
+    <Compile Include="../../ParticleSystem.cs" Link="ParticleSystem.cs" />
+    <Compile Include="../../Plane.cs" Link="Plane.cs" />
+    <Compile Include="../../GameObject.cs" Link="GameObject.cs" />
+    <Compile Include="../../DirectionalLight.cs" Link="DirectionalLight.cs" />
+    <Compile Include="../../AmbientLight.cs" Link="AmbientLight.cs" />
+    <Compile Include="../../material.cs" Link="material.cs" />
+    <Compile Include="../../ShadowMap.cs" Link="ShadowMap.cs" />
+    <Compile Include="../../ShadowSettings.cs" Link="ShadowSettings.cs" />
+  </ItemGroup>
+</Project>
+

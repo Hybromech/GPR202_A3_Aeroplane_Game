@@ -17,7 +17,14 @@ namespace GPR202_Assessment3
         private GameAudio? audio;
         private readonly ParticleSystem explosion = new();
         private readonly VictoryFireworks fireworks = new();
+        private readonly CombatSimulation combat = new();
+        private readonly List<TargetSphere> combatTargets = new(16);
+        private readonly List<ObstacleBox> combatObstacles = new(4);
+        private readonly List<int> combatHits = new(16);
+        private readonly List<CombatExplosionEvent> combatExplosions = new(8);
+        private CombatRenderer? combatRenderer;
         private ParticleRenderer? particleRenderer;
+        private bool triggerGuns, requestMissile, requestBomb;
         private bool crashed;
         private float crashTime;
         private Vector3 initialSpawn;
@@ -30,6 +37,9 @@ namespace GPR202_Assessment3
         private readonly FlightSettings flightSettings = new();
         private FlightPhysics flight = null!;
         private float pitchInput, rollInput, yawInput;
+        private Vector2 virtualStick;
+        private bool mouseLocked = true;
+        private bool ignoreNextMouseDelta = true;
         Skybox skybox;
         Plane plane;
         Terrain terrain;
@@ -63,7 +73,23 @@ namespace GPR202_Assessment3
             this.CenterWindow(new Vector2i(1920, 1080));
             this.VSync = VSyncMode.Off;
             this.WindowState = WindowState.Maximized;
-            //this.CursorState = CursorState.Grabbed;
+            this.CursorState = CursorState.Grabbed;
+        }
+
+        private void SetMouseLock(bool locked)
+        {
+            mouseLocked = locked;
+            CursorState = locked && IsFocused ? CursorState.Grabbed : CursorState.Normal;
+            virtualStick = Vector2.Zero;
+            ignoreNextMouseDelta = true;
+        }
+
+        protected override void OnFocusedChanged(FocusedChangedEventArgs e)
+        {
+            base.OnFocusedChanged(e);
+            CursorState = (e.IsFocused && mouseLocked) ? CursorState.Grabbed : CursorState.Normal;
+            virtualStick = Vector2.Zero;
+            ignoreNextMouseDelta = true;
         }
 
         protected override void OnLoad()
@@ -128,6 +154,7 @@ namespace GPR202_Assessment3
             SetupNewGame();
             audio = new GameAudio(audioSettings);
             particleRenderer = new ParticleRenderer();
+            combatRenderer = new CombatRenderer();
             cockpitHud = new CockpitHud();
 
             base.OnLoad();
@@ -136,6 +163,9 @@ namespace GPR202_Assessment3
         private void SetupNewGame()
         {
             fireworks.Clear();
+            combat.Reset();
+            plane?.ResetOrdnance();
+            triggerGuns = requestMissile = requestBomb = false;
             balloons_left = balloons_total;
             planeMaterial.VictoryGold = false;
             audio?.SetMusicTrack(MusicTrack.InGame);
@@ -151,6 +181,7 @@ namespace GPR202_Assessment3
         protected override void OnUnload()
         {
             cockpitHud?.Dispose();
+            combatRenderer?.Dispose();
             particleRenderer?.Dispose();
             audio?.Dispose();
             timer.Stop();
@@ -213,6 +244,7 @@ namespace GPR202_Assessment3
                 if (crashed)
                 {
                     explosion.Update(FixedDeltaTime);
+                    StepCombat(FixedDeltaTime, allowFiring: false);
                     crashTime += FixedDeltaTime;
                     _accumulator -= FixedDeltaTime;
                     if (crashTime >= 3f) RestartAfterCrash();
@@ -237,6 +269,8 @@ namespace GPR202_Assessment3
                 plane.position = flight.Position;
                 plane.PhysicsOrientation = flight.Orientation;
 
+                StepCombat(FixedDeltaTime, allowFiring: true);
+
                 for (int i = m_balloons.Count - 1; i >= 0; i--)
                 {
                     bool wasCollected = m_balloons[i].collected;
@@ -247,21 +281,141 @@ namespace GPR202_Assessment3
                     }
                     else if (m_balloons[i].collected != wasCollected)
                     {
-                        balloons_left--;
-                        audio?.PlayBalloonPop();
-                        if (balloons_left == 0)
-                        {
-                            planeMaterial.VictoryGold = true;
-                            fireworks.Start(Terrain.width, Terrain.length, Terrain.GetInterpolatedHeightAtWorld);
-                            audio?.SetVictory(true);
-                        }
-                        Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
+                        OnBalloonCollected();
                     }
                 }
 
                 fireworks.Update(FixedDeltaTime);
                 plane.UpdatePropeller(FixedDeltaTime, shadowSettings.PropellerRpm * flight.PropellerSpeedFraction);
                 _accumulator -= FixedDeltaTime;
+            }
+        }
+
+        private void OnBalloonCollected()
+        {
+            balloons_left = Math.Max(0, balloons_left - 1);
+            audio?.PlayBalloonPop();
+            if (balloons_left == 0)
+            {
+                planeMaterial.VictoryGold = true;
+                fireworks.Start(Terrain.width, Terrain.length, Terrain.GetInterpolatedHeightAtWorld);
+                audio?.SetVictory(true);
+            }
+            Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
+        }
+
+        private Vector3 ComputeCrosshairAimPoint()
+        {
+            Vector3 rayOrigin = cameraReady ? smoothCamera : plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
+            Vector3 rayTarget = cameraReady ? smoothTarget : plane.position + flight.Forward * 8f;
+            Vector3 rayDir = rayTarget - rayOrigin;
+            rayDir = rayDir.LengthSquared > 1e-6f ? Vector3.Normalize(rayDir) : flight.Forward;
+
+            // Default convergence point 260m along the center-screen crosshair ray.
+            float bestDist = 260f;
+
+            // Snap convergence distance to any uncollected balloon sitting inside the crosshair cone.
+            for (int i = 0; i < m_balloons.Count; i++)
+            {
+                if (m_balloons[i].collected) continue;
+                Vector3 toBalloon = m_balloons[i].Center - rayOrigin;
+                float proj = Vector3.Dot(toBalloon, rayDir);
+                if (proj < 25f || proj > 600f) continue;
+                Vector3 closest = rayOrigin + rayDir * proj;
+                if (Vector3.DistanceSquared(closest, m_balloons[i].Center) <= 18f * 18f && proj < bestDist)
+                {
+                    bestDist = proj;
+                }
+            }
+
+            // Also converge onto terrain if the crosshair aims into a hillside closer than bestDist.
+            for (float d = 40f; d < bestDist; d += 20f)
+            {
+                Vector3 p = rayOrigin + rayDir * d;
+                if (p.Y <= Terrain.GetInterpolatedHeightAtWorld(p.X, p.Z))
+                {
+                    bestDist = d;
+                    break;
+                }
+            }
+
+            return rayOrigin + rayDir * bestDist;
+        }
+
+        private void StepCombat(float dt, bool allowFiring)
+        {
+            if (allowFiring)
+            {
+                Matrix4 planeModel = plane.ModelMatrix;
+                Vector3 aimPoint = ComputeCrosshairAimPoint();
+
+                if (triggerGuns && combat.TryFireGuns(planeModel, flight.Velocity, aimPoint))
+                {
+                    audio?.PlayGunShot();
+                }
+
+                if (requestMissile)
+                {
+                    requestMissile = false;
+                    int slot = combat.TryFireMissile(planeModel, flight.Orientation, flight.Velocity, aimPoint, i => plane.GetMissileSlot(i).LocalCenter);
+                    if (slot >= 0)
+                    {
+                        plane.SetMissileMounted(slot, false);
+                        audio?.PlayMissileLaunch();
+                    }
+                }
+
+                if (requestBomb)
+                {
+                    requestBomb = false;
+                    int slot = combat.TryDropBomb(planeModel, flight.Orientation, flight.Velocity, i => plane.GetBombSlot(i).LocalCenter);
+                    if (slot >= 0)
+                    {
+                        plane.SetBombMounted(slot, false);
+                    }
+                }
+            }
+
+            combatTargets.Clear();
+            for (int i = 0; i < m_balloons.Count; i++)
+            {
+                if (!m_balloons[i].collected)
+                {
+                    combatTargets.Add(new TargetSphere { Index = i, Center = m_balloons[i].Center, Radius = 12.0f });
+                }
+            }
+
+            combatObstacles.Clear();
+            if (mountainBillboard != null)
+            {
+                combatObstacles.Add(new ObstacleBox
+                {
+                    Center = mountainBillboard.Position + new Vector3(0f, mountainBillboard.Size.Y * 0.5f, 0f),
+                    HalfExtents = new Vector3(mountainBillboard.Size.X * 0.5f, mountainBillboard.Size.Y * 0.5f, 12f)
+                });
+            }
+
+            combatHits.Clear();
+            combatExplosions.Clear();
+            combat.Update(dt, Terrain.GetInterpolatedHeightAtWorld, combatTargets, combatObstacles, combatHits, combatExplosions);
+
+            for (int i = 0; i < combatHits.Count; i++)
+            {
+                int bIdx = combatHits[i];
+                if (bIdx >= 0 && bIdx < m_balloons.Count && m_balloons[bIdx].Pop())
+                {
+                    OnBalloonCollected();
+                }
+            }
+
+            for (int i = 0; i < combatExplosions.Count; i++)
+            {
+                var exp = combatExplosions[i];
+                audio?.PlayExplosion();
+                if (exp.HitGround)
+                {
+                    terrain.AddScorchMark(exp.Position, exp.ScorchRadius);
+                }
             }
         }
         private void RestartAfterCrash()
@@ -273,6 +427,8 @@ namespace GPR202_Assessment3
             plane.position = flight.Position;
             plane.PhysicsOrientation = flight.Orientation;
             pitchInput = rollInput = yawInput = 0f;
+            virtualStick = Vector2.Zero;
+            ignoreNextMouseDelta = true;
             _accumulator = 0f;
             cameraReady = false;
             SetupNewGame();
@@ -281,11 +437,33 @@ namespace GPR202_Assessment3
         private void HandleInput(float deltaT)
         {
             if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
+            if (KeyboardState.IsKeyPressed(Keys.Tab)) SetMouseLock(!mouseLocked);
             if (KeyboardState.IsKeyPressed(Keys.F2)) flightSettings.AssistedControls = !flightSettings.AssistedControls;
             if (KeyboardState.IsKeyPressed(Keys.H)) shadowSettings.CockpitHudEnabled = !shadowSettings.CockpitHudEnabled;
+
             // Cursor displacement is a virtual stick; pitch and rudder are inverted below.
-            pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
-            rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
+            if (CursorState == CursorState.Grabbed)
+            {
+                if (ignoreNextMouseDelta)
+                {
+                    ignoreNextMouseDelta = false;
+                }
+                else
+                {
+                    float halfW = Math.Max(1f, ClientSize.X * 0.35f);
+                    float halfH = Math.Max(1f, ClientSize.Y * 0.35f);
+                    virtualStick.X = Math.Clamp(virtualStick.X + MouseState.Delta.X / halfW, -1f, 1f);
+                    virtualStick.Y = Math.Clamp(virtualStick.Y - MouseState.Delta.Y / halfH, -1f, 1f);
+                }
+                rollInput = virtualStick.X;
+                pitchInput = virtualStick.Y;
+            }
+            else
+            {
+                pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
+                rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
+                virtualStick = new Vector2(rollInput, pitchInput);
+            }
             if (MathF.Abs(pitchInput) < 0.05f) pitchInput = 0f;
             if (MathF.Abs(rollInput) < 0.05f) rollInput = 0f;
             if (KeyboardState.IsKeyDown(Keys.Up)) pitchInput = 1f;
@@ -299,6 +477,13 @@ namespace GPR202_Assessment3
                 pitchInput = 0.35f*pitchInput + 0.65f*pitchInput*pitchInput*pitchInput;
             flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
                 * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
+
+            // Combat controls: LMB/Space = wing machine guns, RMB/Q/F = missiles, MMB/B/E = large bombs.
+            triggerGuns = MouseState.IsButtonDown(MouseButton.Left) || KeyboardState.IsKeyDown(Keys.Space);
+            if (MouseState.IsButtonPressed(MouseButton.Right) || KeyboardState.IsKeyPressed(Keys.Q) || KeyboardState.IsKeyPressed(Keys.F))
+                requestMissile = true;
+            if (MouseState.IsButtonPressed(MouseButton.Middle) || KeyboardState.IsKeyPressed(Keys.B) || KeyboardState.IsKeyPressed(Keys.E))
+                requestBomb = true;
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
@@ -335,6 +520,11 @@ namespace GPR202_Assessment3
 
             terrain.DrawDepth(shadowMap);
             if (!crashed) plane.DrawDepth(shadowMap);
+            for (int i = 0; i < combat.ActiveOrdnance.Count; i++)
+            {
+                var ord = combat.ActiveOrdnance[i];
+                plane.DrawOrdnanceDepth(shadowMap, ord.Kind == OrdnanceKind.Bomb, ord.SlotIndex, ord.Position, ord.Orientation);
+            }
 
             shadowMap.EndPass(viewport[2], viewport[3]);
             gpuTimings.End();
@@ -356,6 +546,11 @@ namespace GPR202_Assessment3
             // Draw Plane with Directional Lighting & Shadows
             gpuTimings.Begin("Plane", shadowSettings.GpuTimingEnabled);
             if (!crashed) plane.Draw(view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
+            for (int i = 0; i < combat.ActiveOrdnance.Count; i++)
+            {
+                var ord = combat.ActiveOrdnance[i];
+                plane.DrawOrdnance(ord.Kind == OrdnanceKind.Bomb, ord.SlotIndex, ord.Position, ord.Orientation, view, proj, sunLight, camWorldPos, ambientLight, planeMaterial, shadowMap);
+            }
             gpuTimings.End();
 
             gpuTimings.Begin("Balloons", shadowSettings.GpuTimingEnabled);
@@ -374,6 +569,10 @@ namespace GPR202_Assessment3
             mountainBillboard.Draw(view, proj, camWorldPos);
             gpuTimings.End();
 
+            combatRenderer?.Draw(combat, view, proj, camWorldPos);
+            particleRenderer?.Draw(combat.ExhaustTrail, view, proj, FramebufferSize.Y, new Vector3(1.1f, 0.95f, 0.75f));
+            for (int i = 0; i < combat.ExplosionBursts.Count; i++)
+                particleRenderer?.Draw(combat.ExplosionBursts[i], view, proj, FramebufferSize.Y);
             particleRenderer?.Draw(explosion, view, proj, FramebufferSize.Y);
             for (int i=0;i<fireworks.Bursts.Length;i++)
                 particleRenderer?.Draw(fireworks.Bursts[i], view, proj, FramebufferSize.Y, fireworks.Colors[i]);
@@ -382,11 +581,11 @@ namespace GPR202_Assessment3
             bloom.EndScene();
             gpuTimings.End();
 
-            if (shadowSettings.CockpitHudEnabled && cockpitHud != null)
+            if (cockpitHud != null)
             {
                 float groundHeight = Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z);
-                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime);
-                cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y);
+                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime, combat, virtualStick);
+                cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y, showInstruments: shadowSettings.CockpitHudEnabled, showCrosshair: !crashed);
             }
 
             this.Context.SwapBuffers();

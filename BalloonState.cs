@@ -77,6 +77,16 @@ namespace GPR_Command
                 position=candidate;
         }
 
+        public Vector3 Center => position + new Vector3(0f, 5.0f, 0f);
+
+        public bool Pop()
+        {
+            if (collected) return false;
+            collected = true;
+            animate = 0.0001f;
+            return true;
+        }
+
         public bool Update(Vector3 playerpos, float deltaT)
         {
             if (collected == false)
@@ -87,10 +97,9 @@ namespace GPR_Command
                 // PERFORMANCE OPTIMIZATION: Use DistanceSquared to avoid expensive square root 
                 // calculations (sqrt) during per-frame collision checks.
                 float collectThresholdSq = 15.0f * 15.0f;
-                if (Vector3.DistanceSquared(position + new Vector3(0f, 5.0f, 0f), playerpos) < collectThresholdSq)
+                if (Vector3.DistanceSquared(Center, playerpos) < collectThresholdSq)
                 {
-                    collected = true;
-                    animate = 0.0001f;
+                    Pop();
                 }
             }
             else
