@@ -101,6 +101,12 @@ Assert(b1 == 1 && sim.BombsRemaining == 0, "Second bomb must drop from slot 1");
 for (int s = 0; s < 35; s++) sim.Update(1f / 60f, (_, _) => -1000f, emptyTargets, emptyObstacles, hits, explosions);
 Assert(sim.TryDropBomb(planeModel, Matrix4.Identity, Vector3.Zero, _ => Vector3.Zero) == -1, "No third bomb may be dropped");
 
+// Verify RestockWeapons refills ammo & ordnance slots without clearing in-flight projectiles.
+int inFlightBefore = sim.ActiveOrdnance.Count;
+sim.RestockWeapons();
+Assert(sim.GunAmmo == 400 && sim.MissilesRemaining == 6 && sim.BombsRemaining == 2, "RestockWeapons must restore all ammo");
+Assert(sim.ActiveOrdnance.Count == inFlightBefore, "RestockWeapons must preserve active in-flight ordnance");
+
 sim.Reset();
 Assert(sim.GunAmmo == 400 && sim.MissilesRemaining == 6 && sim.BombsRemaining == 2, "Reset must restore full combat loadout");
 Console.WriteLine("PASS combat system: 4 wing guns, 6 missile submodels, 2 large bombs, obstacle/ground explosions, and balloon pop checks.");

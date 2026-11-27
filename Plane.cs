@@ -109,6 +109,7 @@ namespace GPR202_Assessment3
         private int shadowStrengthLocation;
         private int bloomThresholdLocation;
         private int bloomIntensityLocation;
+        private int tintLocation;
 
         string vertexShaderCode =
             @"
@@ -171,6 +172,7 @@ namespace GPR202_Assessment3
                 uniform float uShadowStrength;
                 uniform float uBloomThreshold;
                 uniform float uBloomIntensity;
+                uniform vec3 uTint;
 
                 float CompareShadowTexel(ivec2 texel, float receiverDepth)
                 {
@@ -251,7 +253,7 @@ namespace GPR202_Assessment3
                 void main()
                 {
                     vec4 texColor = texture(texture0, texCoord);
-                    vec3 baseColor = uVictoryGold ? vec3(1.0, 0.766, 0.336) : texColor.rgb;
+                    vec3 baseColor = (uVictoryGold ? vec3(1.0, 0.766, 0.336) : texColor.rgb) * uTint;
                     vec3 lightDir = normalize(-dirLight.direction);
 
                     // Cook-Torrance metallic BRDF: GGX distribution, Schlick Fresnel/geometry.
@@ -436,7 +438,7 @@ namespace GPR202_Assessment3
             }
         }
 
-        private void BindPlaneShaderAndState(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap)
+        private void BindPlaneShaderAndState(Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap? shadowMap, Vector3? tint = null)
         {
             GL.UseProgram(planeShaderProgram);
 
@@ -451,6 +453,11 @@ namespace GPR202_Assessment3
             GL.Uniform1(bloomThresholdLocation, Math.Max(0f, bloomSettings?.PlaneBloomThreshold ?? 0.6f));
             GL.Uniform1(bloomIntensityLocation, bloomActive
                 ? Math.Max(0f, bloomSettings!.PlaneBloomIntensity) : 0f);
+            if (tintLocation != -1)
+            {
+                Vector3 t = tint ?? Vector3.One;
+                GL.Uniform3(tintLocation, t);
+            }
 
             // PERFORMANCE OPTIMIZATION: Use cached uniform locations instead of GL.GetUniformLocation every frame.
             GL.UniformMatrix4(viewLocation, true, ref view);
@@ -502,12 +509,12 @@ namespace GPR202_Assessment3
             GL.BindVertexArray(0);
         }
 
-        public void DrawOrdnance(bool isBomb, int slotIndex, Vector3 worldPos, Matrix4 worldOrientation, Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap shadowMap = null)
+        public void DrawOrdnance(bool isBomb, int slotIndex, Vector3 worldPos, Matrix4 worldOrientation, Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap? shadowMap = null, Vector3? tint = null)
         {
             OrdnanceSlot slot = isBomb ? bombSlots[slotIndex] : missileSlots[slotIndex];
             if (slot.IndexCount <= 0) return;
 
-            BindPlaneShaderAndState(view, proj, sunLight, viewPos, ambientLight, material, shadowMap);
+            BindPlaneShaderAndState(view, proj, sunLight, viewPos, ambientLight, material, shadowMap, tint);
             Matrix4 ordModel = Matrix4.CreateTranslation(-slot.LocalCenter)
                 * worldOrientation
                 * Matrix4.CreateTranslation(worldPos);
@@ -515,6 +522,52 @@ namespace GPR202_Assessment3
 
             GL.BindVertexArray(vao);
             GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, slot.IndexCount, DrawElementsType.UnsignedInt, slot.IndexOffset * sizeof(uint));
+            GL.BindVertexArray(0);
+        }
+
+        public void DrawAircraftDepth(ShadowMap shadowMap, Matrix4 aircraftModel, float propAngle, bool[] mountedMissiles, bool[] mountedBombs)
+        {
+            if (shadowMap == null) return;
+            shadowMap.ApplyDepthModel(aircraftModel);
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            for (int i = 0; i < missileSlots.Length && i < mountedMissiles.Length; i++)
+                if (mountedMissiles[i] && missileSlots[i].IndexCount > 0)
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, missileSlots[i].IndexCount, DrawElementsType.UnsignedInt, missileSlots[i].IndexOffset * sizeof(uint));
+            for (int i = 0; i < bombSlots.Length && i < mountedBombs.Length; i++)
+                if (mountedBombs[i] && bombSlots[i].IndexCount > 0)
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, bombSlots[i].IndexCount, DrawElementsType.UnsignedInt, bombSlots[i].IndexOffset * sizeof(uint));
+            Matrix4 propMat = Matrix4.CreateTranslation(-PropellerPivot)
+                * Matrix4.CreateRotationZ(propAngle)
+                * Matrix4.CreateTranslation(PropellerPivot)
+                * aircraftModel;
+            shadowMap.ApplyDepthModel(propMat);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
+            GL.BindVertexArray(0);
+        }
+
+        public void DrawAircraft(Matrix4 aircraftModel, float propAngle, bool[] mountedMissiles, bool[] mountedBombs, Vector3 tint, Matrix4 view, Matrix4 proj, DirectionalLight sunLight, Vector3 viewPos, AmbientLight ambientLight, Material material, ShadowMap? shadowMap = null)
+        {
+            bool savedGold = material.VictoryGold;
+            material.VictoryGold = false;
+            BindPlaneShaderAndState(view, proj, sunLight, viewPos, ambientLight, material, shadowMap, tint);
+            material.VictoryGold = savedGold;
+
+            GL.UniformMatrix4(modelLocation, true, ref aircraftModel);
+            GL.BindVertexArray(vao);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, airframeIndexCount, DrawElementsType.UnsignedInt, 0);
+            for (int i = 0; i < missileSlots.Length && i < mountedMissiles.Length; i++)
+                if (mountedMissiles[i] && missileSlots[i].IndexCount > 0)
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, missileSlots[i].IndexCount, DrawElementsType.UnsignedInt, missileSlots[i].IndexOffset * sizeof(uint));
+            for (int i = 0; i < bombSlots.Length && i < mountedBombs.Length; i++)
+                if (mountedBombs[i] && bombSlots[i].IndexCount > 0)
+                    GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, bombSlots[i].IndexCount, DrawElementsType.UnsignedInt, bombSlots[i].IndexOffset * sizeof(uint));
+            Matrix4 propMat = Matrix4.CreateTranslation(-PropellerPivot)
+                * Matrix4.CreateRotationZ(propAngle)
+                * Matrix4.CreateTranslation(PropellerPivot)
+                * aircraftModel;
+            GL.UniformMatrix4(modelLocation, true, ref propMat);
+            GL.DrawElements(OpenTK.Graphics.OpenGL4.PrimitiveType.Triangles, propellerIndexCount, DrawElementsType.UnsignedInt, airframeIndexCount * sizeof(uint));
             GL.BindVertexArray(0);
         }
 
@@ -601,6 +654,7 @@ namespace GPR202_Assessment3
             shadowStrengthLocation = GL.GetUniformLocation(planeShaderProgram, "uShadowStrength");
             bloomThresholdLocation = GL.GetUniformLocation(planeShaderProgram, "uBloomThreshold");
             bloomIntensityLocation = GL.GetUniformLocation(planeShaderProgram, "uBloomIntensity");
+            tintLocation = GL.GetUniformLocation(planeShaderProgram, "uTint");
 
             GL.UseProgram(planeShaderProgram);
         }

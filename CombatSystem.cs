@@ -19,10 +19,19 @@ namespace GPR202_Assessment3
         public float ScorchRadius { get; init; }
         public bool HitGround { get; init; }
         public OrdnanceKind Source { get; init; }
+        public int OwnerId { get; init; } // -1 = player, >= 0 = enemy index
+    }
+
+    public readonly struct CombatDamageEvent
+    {
+        public int TargetId { get; init; } // -1 = player, >= 0 = enemy index
+        public int OwnerId { get; init; }
+        public float Damage { get; init; }
     }
 
     public struct BulletProjectile
     {
+        public int OwnerId; // -1 = player, >= 0 = enemy
         public Vector3 Position;
         public Vector3 PrevPosition;
         public Vector3 Velocity;
@@ -32,6 +41,7 @@ namespace GPR202_Assessment3
 
     public struct OrdnanceProjectile
     {
+        public int OwnerId; // -1 = player, >= 0 = enemy
         public OrdnanceKind Kind;
         public int SlotIndex;
         public Vector3 Position;
@@ -126,18 +136,23 @@ namespace GPR202_Assessment3
             }
         }
 
-        public void Reset()
+        public void RestockWeapons()
         {
             GunAmmo = MaxGunAmmo;
             MissilesRemaining = MaxMissiles;
             BombsRemaining = MaxBombs;
-            HitMarkerTimer = 0f;
             gunTimer = 0f;
             missileTimer = 0f;
             bombTimer = 0f;
-            gunPairToggle = 0;
             nextMissileOrderIdx = 0;
             nextBombOrderIdx = 0;
+        }
+
+        public void Reset()
+        {
+            RestockWeapons();
+            HitMarkerTimer = 0f;
+            gunPairToggle = 0;
             Bullets.Clear();
             ActiveOrdnance.Clear();
             MuzzleFlashes.Clear();
@@ -167,6 +182,7 @@ namespace GPR202_Assessment3
                 float forwardCarry = Math.Max(0f, Vector3.Dot(planeVelocity, dir));
                 Bullets.Add(new BulletProjectile
                 {
+                    OwnerId = -1,
                     Position = muzzleWorld,
                     PrevPosition = muzzleWorld,
                     Velocity = dir * (forwardCarry + BulletSpeed),
@@ -209,6 +225,7 @@ namespace GPR202_Assessment3
 
             ActiveOrdnance.Add(new OrdnanceProjectile
             {
+                OwnerId = -1,
                 Kind = OrdnanceKind.Missile,
                 SlotIndex = slot,
                 Position = spawnPos,
@@ -241,6 +258,7 @@ namespace GPR202_Assessment3
 
             ActiveOrdnance.Add(new OrdnanceProjectile
             {
+                OwnerId = -1,
                 Kind = OrdnanceKind.Bomb,
                 SlotIndex = slot,
                 Position = spawnPos,
@@ -258,13 +276,95 @@ namespace GPR202_Assessment3
             return slot;
         }
 
+        // Enemy weapon spawn helpers (share the same physics, tracers, submodels, and explosions).
+        public void SpawnEnemyBulletPair(int ownerId, Matrix4 enemyModel, Vector3 enemyVelocity, Vector3 aimPoint, int pairToggle)
+        {
+            int leftIdx = pairToggle == 0 ? 0 : 1;
+            int rightIdx = pairToggle == 0 ? 3 : 2;
+            int[] pair = { leftIdx, rightIdx };
+            foreach (int muzzleIdx in pair)
+            {
+                Vector3 muzzleWorld = Vector3.TransformPosition(Plane.WingGunMuzzles[muzzleIdx], enemyModel);
+                Vector3 toAim = aimPoint - muzzleWorld;
+                Vector3 dir = toAim.LengthSquared > 0.01f ? Vector3.Normalize(toAim) : Vector3.Normalize(Vector3.TransformVector(Vector3.UnitZ, enemyModel));
+                float forwardCarry = Math.Max(0f, Vector3.Dot(enemyVelocity, dir));
+                Bullets.Add(new BulletProjectile
+                {
+                    OwnerId = ownerId,
+                    Position = muzzleWorld,
+                    PrevPosition = muzzleWorld,
+                    Velocity = dir * (forwardCarry + BulletSpeed * 0.9f),
+                    Age = 0f,
+                    MaxAge = BulletLifetime
+                });
+                MuzzleFlashes.Add(new MuzzleFlash
+                {
+                    Position = muzzleWorld,
+                    Age = 0f,
+                    Lifetime = 0.055f
+                });
+            }
+        }
+
+        public void SpawnEnemyMissile(int ownerId, int slotIndex, Matrix4 enemyModel, Matrix4 enemyOrientation, Vector3 enemyVelocity, Vector3 aimPoint, Vector3 localCenter)
+        {
+            Vector3 spawnPos = Vector3.TransformPosition(localCenter, enemyModel);
+            Vector3 toAim = aimPoint - spawnPos;
+            Vector3 dir = toAim.LengthSquared > 0.01f ? Vector3.Normalize(toAim) : Vector3.Normalize(Vector3.TransformVector(Vector3.UnitZ, enemyOrientation));
+            float forwardCarry = Math.Max(0f, Vector3.Dot(enemyVelocity, dir));
+            ActiveOrdnance.Add(new OrdnanceProjectile
+            {
+                OwnerId = ownerId,
+                Kind = OrdnanceKind.Missile,
+                SlotIndex = Math.Clamp(slotIndex, 0, Plane.MissileCount - 1),
+                Position = spawnPos,
+                PrevPosition = spawnPos,
+                Velocity = dir * (forwardCarry + MissileLaunchBoost),
+                Orientation = BuildOrientationFromForward(dir, Vector3.TransformVector(Vector3.UnitY, enemyOrientation)),
+                Age = 0f,
+                MaxAge = 8.0f,
+                ExplosionRadius = MissileExplosionRadius,
+                Damage = MissileDamage,
+                ScorchRadius = MissileScorchRadius,
+                ExhaustTimer = 0f
+            });
+        }
+
+        public void SpawnEnemyBomb(int ownerId, int slotIndex, Matrix4 enemyModel, Matrix4 enemyOrientation, Vector3 enemyVelocity, Vector3 localCenter)
+        {
+            Vector3 spawnPos = Vector3.TransformPosition(localCenter, enemyModel);
+            ActiveOrdnance.Add(new OrdnanceProjectile
+            {
+                OwnerId = ownerId,
+                Kind = OrdnanceKind.Bomb,
+                SlotIndex = Math.Clamp(slotIndex, 0, Plane.BombCount - 1),
+                Position = spawnPos,
+                PrevPosition = spawnPos,
+                Velocity = enemyVelocity + new Vector3(0f, -3.5f, 0f),
+                Orientation = enemyOrientation,
+                Age = 0f,
+                MaxAge = 16.0f,
+                ExplosionRadius = BombExplosionRadius,
+                Damage = BombDamage,
+                ScorchRadius = BombScorchRadius,
+                ExhaustTimer = 0f
+            });
+        }
+
+        public void SpawnAircraftExplosion(Vector3 position)
+        {
+            SpawnBlastParticles(position, velocityScale: 1.8f, lifetimeScale: 1.35f);
+        }
+
         public void Update(
             float dt,
             Func<float, float, float> getTerrainHeight,
             IReadOnlyList<TargetSphere> targets,
             IReadOnlyList<ObstacleBox> obstacles,
             List<int> hitTargetIndices,
-            List<CombatExplosionEvent> explosions)
+            List<CombatExplosionEvent> explosions,
+            IReadOnlyList<TargetSphere>? aircraftTargets = null,
+            List<CombatDamageEvent>? aircraftDamage = null)
         {
             if (gunTimer > 0f) gunTimer = Math.Max(0f, gunTimer - dt);
             if (missileTimer > 0f) missileTimer = Math.Max(0f, missileTimer - dt);
@@ -295,15 +395,36 @@ namespace GPR202_Assessment3
                 b.Position += b.Velocity * dt;
 
                 bool hit = false;
-                // Check target spheres (balloons) via swept segment distance.
-                for (int t = 0; t < targets.Count; t++)
+                // Player bullets pop balloons.
+                if (b.OwnerId < 0)
                 {
-                    if (SegmentIntersectsSphere(b.PrevPosition, b.Position, targets[t].Center, targets[t].Radius))
+                    for (int t = 0; t < targets.Count; t++)
                     {
-                        hitTargetIndices.Add(targets[t].Index);
-                        TriggerHitMarker();
-                        hit = true;
-                        break;
+                        if (SegmentIntersectsSphere(b.PrevPosition, b.Position, targets[t].Center, targets[t].Radius))
+                        {
+                            hitTargetIndices.Add(targets[t].Index);
+                            TriggerHitMarker();
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Aircraft hits (player hits enemies; enemies hit player).
+                if (!hit && aircraftTargets != null && aircraftDamage != null)
+                {
+                    for (int a = 0; a < aircraftTargets.Count; a++)
+                    {
+                        var ac = aircraftTargets[a];
+                        if (ac.Index == b.OwnerId) continue;
+                        if (b.OwnerId >= 0 && ac.Index >= 0) continue; // enemies don't friendly-fire each other
+                        if (SegmentIntersectsSphere(b.PrevPosition, b.Position, ac.Center, ac.Radius))
+                        {
+                            aircraftDamage.Add(new CombatDamageEvent { TargetId = ac.Index, OwnerId = b.OwnerId, Damage = BulletDamage });
+                            if (b.OwnerId < 0) TriggerHitMarker();
+                            hit = true;
+                            break;
+                        }
                     }
                 }
 
@@ -381,14 +502,35 @@ namespace GPR202_Assessment3
                 bool hitGround = false;
                 Vector3 impactPos = ord.Position;
 
-                // Impact against balloons.
-                for (int t = 0; t < targets.Count; t++)
+                // Impact against balloons (player ordnance).
+                if (ord.OwnerId < 0)
                 {
-                    if (SegmentIntersectsSphere(ord.PrevPosition, ord.Position, targets[t].Center, targets[t].Radius + 2.0f))
+                    for (int t = 0; t < targets.Count; t++)
                     {
-                        impacted = true;
-                        impactPos = targets[t].Center;
-                        break;
+                        if (SegmentIntersectsSphere(ord.PrevPosition, ord.Position, targets[t].Center, targets[t].Radius + 2.0f))
+                        {
+                            impacted = true;
+                            impactPos = targets[t].Center;
+                            break;
+                        }
+                    }
+                }
+
+                // Direct/proximity impact against enemy or player aircraft.
+                if (!impacted && aircraftTargets != null)
+                {
+                    for (int a = 0; a < aircraftTargets.Count; a++)
+                    {
+                        var ac = aircraftTargets[a];
+                        if (ac.Index == ord.OwnerId) continue;
+                        if (ord.OwnerId >= 0 && ac.Index >= 0) continue;
+                        float prox = ord.Kind == OrdnanceKind.Bomb ? 6.0f : 3.5f;
+                        if (SegmentIntersectsSphere(ord.PrevPosition, ord.Position, ac.Center, ac.Radius + prox))
+                        {
+                            impacted = true;
+                            impactPos = ac.Center;
+                            break;
+                        }
                     }
                 }
 
@@ -420,7 +562,7 @@ namespace GPR202_Assessment3
 
                 if (impacted)
                 {
-                    Detonate(ord, impactPos, hitGround, targets, hitTargetIndices, explosions);
+                    Detonate(ord, impactPos, hitGround, targets, hitTargetIndices, explosions, aircraftTargets, aircraftDamage);
                     ActiveOrdnance.RemoveAt(i);
                 }
                 else
@@ -439,15 +581,44 @@ namespace GPR202_Assessment3
             bool hitGround,
             IReadOnlyList<TargetSphere> targets,
             List<int> hitTargetIndices,
-            List<CombatExplosionEvent> explosions)
+            List<CombatExplosionEvent> explosions,
+            IReadOnlyList<TargetSphere>? aircraftTargets,
+            List<CombatDamageEvent>? aircraftDamage)
         {
             float radiusSq = ord.ExplosionRadius * ord.ExplosionRadius;
-            for (int t = 0; t < targets.Count; t++)
+            if (ord.OwnerId < 0)
             {
-                if (Vector3.DistanceSquared(impactPos, targets[t].Center) <= radiusSq)
+                for (int t = 0; t < targets.Count; t++)
                 {
-                    hitTargetIndices.Add(targets[t].Index);
-                    TriggerHitMarker();
+                    if (Vector3.DistanceSquared(impactPos, targets[t].Center) <= radiusSq)
+                    {
+                        hitTargetIndices.Add(targets[t].Index);
+                        TriggerHitMarker();
+                    }
+                }
+            }
+
+            if (aircraftTargets != null && aircraftDamage != null)
+            {
+                for (int a = 0; a < aircraftTargets.Count; a++)
+                {
+                    var ac = aircraftTargets[a];
+                    if (ac.Index == ord.OwnerId) continue;
+                    if (ord.OwnerId >= 0 && ac.Index >= 0) continue;
+                    float distSq = Vector3.DistanceSquared(impactPos, ac.Center);
+                    if (distSq <= radiusSq)
+                    {
+                        // Smooth splash falloff from 100% at center to 40% at edge of blast radius.
+                        float dist = MathF.Sqrt(distSq);
+                        float falloff = Math.Clamp(1f - 0.6f * (dist / Math.Max(1f, ord.ExplosionRadius)), 0.4f, 1f);
+                        aircraftDamage.Add(new CombatDamageEvent
+                        {
+                            TargetId = ac.Index,
+                            OwnerId = ord.OwnerId,
+                            Damage = ord.Damage * falloff
+                        });
+                        if (ord.OwnerId < 0) TriggerHitMarker();
+                    }
                 }
             }
 
@@ -469,7 +640,8 @@ namespace GPR202_Assessment3
                 Damage = ord.Damage,
                 ScorchRadius = ord.ScorchRadius,
                 HitGround = hitGround,
-                Source = ord.Kind
+                Source = ord.Kind,
+                OwnerId = ord.OwnerId
             });
         }
 
@@ -665,14 +837,16 @@ namespace GPR202_Assessment3
                 PushVert(hL, headCol);
             }
 
-            // Glowing tracer streaks for machine-gun bullets.
+            // Glowing tracer streaks (gold-yellow for player, crimson-red for enemies).
             for (int i = 0; i < sim.Bullets.Count; i++)
             {
                 var b = sim.Bullets[i];
                 Vector3 dir = b.Velocity.LengthSquared > 1e-4f ? Vector3.Normalize(b.Velocity) : Vector3.UnitZ;
                 Vector3 head = b.Position;
                 Vector3 tail = head - dir * 8.5f;
-                PushRibbon(head, tail, 0.16f, new Vector4(4.5f, 3.4f, 1.0f, 1.0f), new Vector4(2.5f, 0.7f, 0.1f, 0.0f));
+                Vector4 headCol = b.OwnerId < 0 ? new Vector4(4.5f, 3.4f, 1.0f, 1.0f) : new Vector4(4.8f, 0.9f, 0.4f, 1.0f);
+                Vector4 tailCol = b.OwnerId < 0 ? new Vector4(2.5f, 0.7f, 0.1f, 0.0f) : new Vector4(2.8f, 0.15f, 0.05f, 0.0f);
+                PushRibbon(head, tail, 0.16f, headCol, tailCol);
             }
 
             // Bright orange-white rocket flames behind active missiles.

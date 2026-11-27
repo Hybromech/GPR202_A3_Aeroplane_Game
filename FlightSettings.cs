@@ -1,13 +1,13 @@
 namespace GPR202_Assessment3
 {
     // SI units; a tunable simplified aircraft, not a certified P-51 flight model.
-    public sealed class FlightSettings
+    public class FlightSettings
     {
         public bool AssistedControls { get; set; } = true;
-        public float AssistedMaxBankDegrees { get; set; } = 90f;
-        public float AssistedRollRate { get; set; } = 1.0f;
-        public float AssistedPitchRate { get; set; } = 0.65f;
-        public float TurnLiftAssistance { get; set; } = 0.65f;
+        public float AssistedMaxBankDegrees { get; set; } = 90f; // 90f
+        public float AssistedRollRate { get; set; } = 1.0f; //1.0f
+        public float AssistedPitchRate { get; set; } = 1.65f; //0.65f
+        public float TurnLiftAssistance { get; set; } = 1.65f; //0.65f
         public float CoordinatedTurnAssistance { get; set; } = 1f;
         // Distance behind the plane in world units; rendering enforces a minimum of 1.
         public float CameraDistance { get; set; } = 3f;
@@ -16,7 +16,7 @@ namespace GPR202_Assessment3
         public float Mass { get; set; } = 3500f;
         public float WingArea { get; set; } = 22f;
         public float AirDensity { get; set; } = 1.225f;
-        public float MaxThrust { get; set; } = 18000f;
+        public float MaxThrust { get; set; } = 25000f; //18000
         public float EngineResponseRate { get; set; } = 2f;
         // Extra drag from the windmilling propeller at closed throttle.
         public float IdlePropellerDrag { get; set; } = 0.015f;

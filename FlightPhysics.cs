@@ -24,10 +24,11 @@ namespace GPR202_Assessment3
         public Vector3 Up => Vector3.TransformVector(Vector3.UnitY, Orientation);
         public Vector3 Right => Vector3.TransformVector(Vector3.UnitX, Orientation);
         public FlightPhysics(FlightSettings settings) => this.settings = settings;
-        public void Reset(Vector3 position)
+        public void Reset(Vector3 position) => Reset(position, Matrix4.CreateRotationY(MathF.PI));
+        public void Reset(Vector3 position, Matrix4 orientation)
         {
             Position = position;
-            Orientation = Matrix4.CreateRotationY(MathF.PI);
+            Orientation = orientation;
             Velocity = Forward * settings.StartSpeed;
             rates = Vector3.Zero;
             AngleOfAttack = 0f;
