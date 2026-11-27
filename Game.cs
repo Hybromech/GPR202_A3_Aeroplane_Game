@@ -40,6 +40,7 @@ namespace GPR202_Assessment3
         ShadowSettings shadowSettings;
         ShadowMap shadowMap;
         private Bloom bloom = null!;
+        private CockpitHud? cockpitHud;
         private readonly GpuTimings gpuTimings = new();
         private BillBoard mountainBillboard = null!;
 
@@ -127,6 +128,7 @@ namespace GPR202_Assessment3
             SetupNewGame();
             audio = new GameAudio(audioSettings);
             particleRenderer = new ParticleRenderer();
+            cockpitHud = new CockpitHud();
 
             base.OnLoad();
         }
@@ -148,6 +150,7 @@ namespace GPR202_Assessment3
 
         protected override void OnUnload()
         {
+            cockpitHud?.Dispose();
             particleRenderer?.Dispose();
             audio?.Dispose();
             timer.Stop();
@@ -279,6 +282,7 @@ namespace GPR202_Assessment3
         {
             if (KeyboardState.IsKeyDown(Keys.Escape)) Close();
             if (KeyboardState.IsKeyPressed(Keys.F2)) flightSettings.AssistedControls = !flightSettings.AssistedControls;
+            if (KeyboardState.IsKeyPressed(Keys.H)) shadowSettings.CockpitHudEnabled = !shadowSettings.CockpitHudEnabled;
             // Cursor displacement is a virtual stick; pitch and rudder are inverted below.
             pitchInput = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -1f, 1f);
             rollInput = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -1f, 1f);
@@ -377,6 +381,14 @@ namespace GPR202_Assessment3
             gpuTimings.Begin("Bloom", shadowSettings.GpuTimingEnabled);
             bloom.EndScene();
             gpuTimings.End();
+
+            if (shadowSettings.CockpitHudEnabled && cockpitHud != null)
+            {
+                float groundHeight = Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z);
+                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime);
+                cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y);
+            }
+
             this.Context.SwapBuffers();
             base.OnRenderFrame(args);
         }
