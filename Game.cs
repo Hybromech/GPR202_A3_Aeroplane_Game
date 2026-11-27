@@ -136,7 +136,7 @@ namespace GPR202_Assessment3
             fireworks.Clear();
             balloons_left = balloons_total;
             planeMaterial.VictoryGold = false;
-            audio?.SetVictory(false);
+            audio?.SetMusicTrack(MusicTrack.InGame);
             m_balloons = new List<BalloonState>();
             for (int i = 0; i < balloons_left; i++)
             {
@@ -225,6 +225,7 @@ namespace GPR202_Assessment3
                     terrain.AddScorchMark(plane.position);
                     explosion.Explode(plane.position + Vector3.UnitY*2f);
                     audio?.Update(0f, true, 0f, false);
+                    audio?.SetMusicTrack(MusicTrack.Death);
                     audio?.PlayExplosion();
                     Title = "Crashed! Restarting...";
                     _accumulator -= FixedDeltaTime;

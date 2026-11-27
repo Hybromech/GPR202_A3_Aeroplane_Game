@@ -1,15 +1,19 @@
 # Game audio
 
-GameAudio uses NAudio 2.2.1 with the Windows default output device. The game continues silently if audio cannot initialize. Audio fades out when the window loses focus, resumes on focus, and is disposed on exit.
+GameAudio uses NAudio 2.2.1 with the Windows default output device. The game continues silently if audio cannot initialize or if any audio file is missing. Audio fades out when the window loses focus, resumes on focus, and is disposed on exit.
 
-AudioSettings.cs controls Enabled, MasterVolume, EngineVolume, PopVolume and MusicVolume (volumes 0–1). Game.cs owns the settings instance.
+AudioSettings.cs controls Enabled, MasterVolume, EngineVolume, ExplosionVolume, PopVolume, StallWarningVolume, and MusicVolume (volumes 0–1). Game.cs owns the settings instance.
 
-The engine loops continuously and smoothly changes pitch and level with throttle, including an idle sound at zero throttle. One pop is triggered when a balloon first becomes collected; up to eight overlapping effects are mixed. Background music begins when loading finishes and repeats a four-chord cinematic-style synth arrangement with pad, bass, arpeggio and percussion. All sounds are original procedural synthesis, not sampled aircraft recordings or orchestral recordings; no audio assets need downloading.
+## Audio assets (`Resource/Audio`)
 
-Run automated checks: dotnet run --project tests/AudioChecks/AudioChecks.csproj -c Release
+- **Engine (`effects/engine.wav`)**: Cached into memory with a seamless loop crossfade. Pitch and level change smoothly with throttle, including idle at zero throttle, and fade out on crash.
+- **Explosion (`effects/explode.wav`)**: One-shot blast played on terrain impact.
+- **Stall warning (`effects/warning_beep.wav`)**: Repeating warning beep whose rate and level increase as angle of attack approaches stall, fading out on recovery.
+- **Balloon pop (`effects/pop.wav` optional)**: Uses `effects/pop.wav` if present, otherwise falls back to the procedural pop effect. Up to eight overlapping pops are mixed.
+- **Music (`music/background_in_game.wav`, `music/win.wav`, `music/death.wav`, `music/menu.wav`)**: Streamed lazily from disk and smoothly crossfaded via `MusicTrack`:
+  - `InGame` (`background_in_game.wav`) loops during normal flight.
+  - `Victory` (`win.wav`) crossfades in when all balloons are collected.
+  - `Death` (`death.wav`) crossfades in on crash during the three-second restart sequence; restarting restores `InGame`.
+  - `Menu` (`menu.wav`) is wired into `MusicTrack` and ready for future menu integration.
 
-StallWarningVolume controls a pulsing tone that grows as angle of attack approaches stall.
-
-ExplosionVolume controls the crash blast. Engine and stall-warning audio stop on impact; the soundtrack continues during the three-second restart sequence.
-
-Collecting all balloons crossfades to an original looping major-key victory fanfare. MusicVolume controls both tracks. A crash restart restores the normal soundtrack.
+Run automated checks: `dotnet run --project tests/AudioChecks/AudioChecks.csproj -c Release`
