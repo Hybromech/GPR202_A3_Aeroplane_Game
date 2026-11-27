@@ -1,0 +1,41 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "FlightChecks/1.0.0": {
+        "dependencies": {
+          "OpenTK.Mathematics": "4.8.2"
+        },
+        "runtime": {
+          "FlightChecks.dll": {}
+        }
+      },
+      "OpenTK.Mathematics/4.8.2": {
+        "runtime": {
+          "lib/netcoreapp3.1/OpenTK.Mathematics.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FlightChecks/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "OpenTK.Mathematics/4.8.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-A8D3eBWi/LKndvTQQ9o9uwyQJUjGORfWCn/gOvX0jIwmTctkLGnOdw5kw4JbRnzfrhZoSIaqZ7MYWWhIkasORw==",
+      "path": "opentk.mathematics/4.8.2",
+      "hashPath": "opentk.mathematics.4.8.2.nupkg.sha512"
+    }
+  }
+}

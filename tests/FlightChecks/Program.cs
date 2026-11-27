@@ -33,7 +33,85 @@ var bankedClimb=new FlightPhysics(new FlightSettings());bankedClimb.Reset(new Ve
 for(int n=0;n<120;n++)bankedClimb.Step(dt,0,1f,0);
 float yBefore=bankedClimb.Position.Y;
 for(int n=0;n<240;n++)bankedClimb.Step(dt,0.7f,0.8f,0);
+Console.WriteLine($"BankedClimb: dY={bankedClimb.Position.Y-yBefore:F1}, FwdY={bankedClimb.Forward.Y:F2}, Bank={MathHelper.RadiansToDegrees(bankedClimb.BankAngle):F1}deg, AoA={MathHelper.RadiansToDegrees(bankedClimb.AngleOfAttack):F1}deg, Spd={bankedClimb.Airspeed:F1}");
 Assert(bankedClimb.Position.Y>yBefore+20f && bankedClimb.Forward.Y>0.1f,"Assisted pitch-up while banked must climb relative to ground");
+}
+// Verify extreme screen edge pulls up heavily for a much sharper turn than mid-screen input.
+{
+float MeasureTurnDeg(float rollCmd) {
+var t=new FlightPhysics(new FlightSettings());t.Reset(new Vector3(0,1000,0));
+Vector3 startFwd=new Vector3(t.Forward.X,0,t.Forward.Z).Normalized();
+float maxAoA=0f;
+for(int n=0;n<240;n++){t.Step(dt,0,rollCmd,0);maxAoA=Math.Max(maxAoA,MathHelper.RadiansToDegrees(t.AngleOfAttack));}
+Vector3 endFwd=new Vector3(t.Forward.X,0,t.Forward.Z).Normalized();
+float deg=MathHelper.RadiansToDegrees(MathF.Acos(Math.Clamp(Vector3.Dot(startFwd,endFwd),-1f,1f)));
+Console.WriteLine($"Turn roll={rollCmd:F1}: headingTurn={deg:F1}deg, bank={MathHelper.RadiansToDegrees(t.BankAngle):F1}deg, maxAoA={maxAoA:F1}deg, dY={t.Position.Y-1000f:F1}, spd={t.Airspeed:F1}");
+return deg;
+}
+float midTurn=MeasureTurnDeg(0.5f);
+float edgeTurn=MeasureTurnDeg(1.0f);
+Assert(edgeTurn>midTurn+30f,"Extreme screen edge must carve a noticeably sharper turn than mid-screen");
+}
+// Verify separate gamepad controls: direct roll (holds bank), pitch, starboard/port strafe, and right-stick-click auto-level.
+{
+var gp=new FlightPhysics(new FlightSettings());gp.Reset(new Vector3(0,1000,0));
+// Roll right with Left Stick X, then release and verify bank is held (does not snap back to 0).
+for(int n=0;n<60;n++)gp.StepGamepad(dt,0f,0.8f,0f,false);
+float bankAfterRoll=gp.BankAngle;
+for(int n=0;n<60;n++)gp.StepGamepad(dt,0f,0f,0f,false);
+Console.WriteLine($"Gamepad roll: after={MathHelper.RadiansToDegrees(bankAfterRoll):F1}deg, held={MathHelper.RadiansToDegrees(gp.BankAngle):F1}deg");
+Assert(bankAfterRoll>0.35f && gp.BankAngle>0.30f,"Gamepad Left Stick X must roll right and hold bank on release");
+// Pitch up with stick Y, then trigger Right Stick Click leveling and verify bank & pitch level out.
+for(int n=0;n<40;n++)gp.StepGamepad(dt,0.7f,0f,0f,false);
+for(int n=0;n<240;n++)gp.StepGamepad(dt,0f,0f,0f,true);
+Console.WriteLine($"Gamepad level: bank={MathHelper.RadiansToDegrees(gp.BankAngle):F1}deg, FwdY={gp.Forward.Y:F3}, approxLevel={gp.IsApproximatelyLevel}");
+Assert(MathF.Abs(gp.BankAngle)<0.05f && MathF.Abs(gp.Forward.Y)<0.05f,"Gamepad Right Stick Click must level both bank and pitch");
+// Strafe right (+1) while facing -Z must move plane toward +X (starboard).
+gp.Reset(new Vector3(0,1000,0));
+float xBefore=gp.Position.X;
+for(int n=0;n<90;n++)gp.StepGamepad(dt,0f,0f,1f,false);
+float dxRight=gp.Position.X-xBefore;
+gp.Reset(new Vector3(0,1000,0));
+for(int n=0;n<90;n++)gp.StepGamepad(dt,0f,0f,-1f,false);
+float dxLeft=gp.Position.X;
+Console.WriteLine($"Gamepad strafe: right dX={dxRight:F1}m, left dX={dxLeft:F1}m");
+Assert(dxRight>6f && dxLeft<-6f,"Gamepad Right Stick X must strafe starboard (+X) and port (-X)");
+// Dual-stick combined pitch must pitch much more aggressively than single-stick pitch.
+float singleCmd=1f;
+float dualCmd=2.6f;
+float singleDiveCmd=-1f;
+float dualDiveCmd=-2.6f;
+var gpSingle=new FlightPhysics(new FlightSettings());gpSingle.Reset(new Vector3(0,1000,0));
+var gpDual=new FlightPhysics(new FlightSettings());gpDual.Reset(new Vector3(0,1000,0));
+for(int n=0;n<60;n++){gpSingle.StepGamepad(dt,singleCmd,0f,0f,false);gpDual.StepGamepad(dt,dualCmd,0f,0f,false);}
+float singlePitchDeg=MathHelper.RadiansToDegrees(MathF.Asin(Math.Clamp(gpSingle.Forward.Y,-1f,1f)));
+float dualPitchDeg=MathHelper.RadiansToDegrees(MathF.Asin(Math.Clamp(gpDual.Forward.Y,-1f,1f)));
+gpSingle.Reset(new Vector3(0,1000,0));gpDual.Reset(new Vector3(0,1000,0));
+for(int n=0;n<60;n++){gpSingle.StepGamepad(dt,singleDiveCmd,0f,0f,false);gpDual.StepGamepad(dt,dualDiveCmd,0f,0f,false);}
+float singleDiveDeg=MathHelper.RadiansToDegrees(MathF.Asin(Math.Clamp(gpSingle.Forward.Y,-1f,1f)));
+float dualDiveDeg=MathHelper.RadiansToDegrees(MathF.Asin(Math.Clamp(gpDual.Forward.Y,-1f,1f)));
+Console.WriteLine($"Gamepad pitch (0.5s): singleUp={singlePitchDeg:F1}deg vs dualUp={dualPitchDeg:F1}deg; singleDown={singleDiveDeg:F1}deg vs dualDown={dualDiveDeg:F1}deg");
+Assert(dualCmd>singleCmd*2f && dualPitchDeg>singlePitchDeg*1.7f && dualDiveDeg<singleDiveDeg*1.7f,"Both sticks combined must produce much stronger pitch up and down");
+// Verify natural bank-induced turn: bank right (~45deg) then release sticks -> plane naturally turns right.
+foreach(float sign in new[]{-1f,1f}) {
+var bt=new FlightPhysics(new FlightSettings());bt.Reset(new Vector3(0,1000,0));
+for(int n=0;n<60;n++)bt.StepGamepad(dt,0f,sign*0.9f,0f,false);
+float bankHeld=MathHelper.RadiansToDegrees(bt.BankAngle);
+for(int n=0;n<240;n++)bt.StepGamepad(dt,0f,0f,0f,false);
+Vector3 endFlat=new Vector3(bt.Forward.X,0,bt.Forward.Z).Normalized();
+float turnDeg=MathHelper.RadiansToDegrees(MathF.Acos(Math.Clamp(Vector3.Dot(new Vector3(0,0,-1),endFlat),-1f,1f)));
+Console.WriteLine($"Gamepad natural bank turn ({(sign>0?"right":"left")}): bank={bankHeld:F1}deg -> turned={turnDeg:F1}deg, FwdX={bt.Forward.X:F2}, dY={bt.Position.Y-1000f:F1}");
+Assert(sign*bt.Forward.X>0.35f && turnDeg>20f,"Banking with sticks released must naturally turn the plane in the bank direction");
+}
+// Verify EnableMaxBankAngle=false allows rolling past 90 deg (inverted) and R3 levels back upright.
+{
+var freeRoll=new FlightPhysics(new FlightSettings{EnableMaxBankAngle=false});freeRoll.Reset(new Vector3(0,1000,0));
+bool wentInverted=false;
+for(int n=0;n<120;n++){freeRoll.StepGamepad(dt,0f,1f,0f,false);wentInverted|=MathF.Abs(freeRoll.BankAngle)>MathHelper.DegreesToRadians(110f);}
+Assert(wentInverted,"EnableMaxBankAngle=false must allow rolling past 90 degrees");
+for(int n=0;n<240;n++)freeRoll.StepGamepad(dt,0f,0f,0f,true);
+Assert(MathF.Abs(freeRoll.BankAngle)<0.05f,"R3 leveling must recover upright even from inverted roll");
+}
 }
 var cfg=new FlightSettings();var p=new FlightPhysics(cfg);p.Reset(new Vector3(0,1000,0));bool stalled=false,warned=false;
 for(int n=0;n<2400;n++){p.Step(dt,1,0,0);stalled|=p.IsStalled;warned|=p.StallWarning>0;}

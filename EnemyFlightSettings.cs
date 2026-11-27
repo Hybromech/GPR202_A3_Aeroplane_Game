@@ -20,6 +20,10 @@ namespace GPR202_Assessment3
         {
             AssistedControls = true;
             AssistedMaxBankDegrees = 70f;
+            MaxThrust = 16000f; //13000
+            ParasiticDrag = 0.055f;
+            MaxThrottle = 0.85f;
+            StartSpeed = 65f;
         }
 
         public EnemyFlightSettings Clone()
@@ -39,7 +43,7 @@ namespace GPR202_Assessment3
                 Mass = Mass,
                 WingArea = WingArea,
                 AirDensity = AirDensity,
-                MaxThrust = 18000f,
+                MaxThrust = MaxThrust,
                 EngineResponseRate = EngineResponseRate,
                 IdlePropellerDrag = IdlePropellerDrag,
                 PropellerIdleFraction = PropellerIdleFraction,
@@ -50,6 +54,7 @@ namespace GPR202_Assessment3
                 InducedDrag = InducedDrag,
                 PitchAuthority = PitchAuthority,
                 RollAuthority = RollAuthority,
+                EnableMaxBankAngle = EnableMaxBankAngle,
                 MaxBankAngleDegrees = MaxBankAngleDegrees,
                 YawAuthority = YawAuthority,
                 ThrottleWheelStep = ThrottleWheelStep,

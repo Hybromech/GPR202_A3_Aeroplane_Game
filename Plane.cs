@@ -30,8 +30,8 @@ namespace GPR202_Assessment3
         public const int BombCount = 2;
         public const float DefaultMaxHealth = 100f;
 
-        public float MaxHealth { get; private set; } = 300;
-        public float Health { get; private set; } = 300;
+        public float MaxHealth { get; private set; } = 500;
+        public float Health { get; private set; } = 500;
         public bool IsDestroyed => Health <= 0f;
         public float HealthFraction => MaxHealth > 0f ? Math.Clamp(Health / MaxHealth, 0f, 1f) : 0f;
 
@@ -324,8 +324,12 @@ namespace GPR202_Assessment3
                 }
             ";
 
-        public Plane() : this(DefaultMaxHealth)
+        public Plane()
         {
+            MaxHealth = Math.Max(1f, Math.Max(MaxHealth, Health));
+            Health = Math.Clamp(Health, 0f, MaxHealth);
+            ImportModelFile();
+            Setup();
         }
 
         public Plane(float maxHealth)

@@ -35,8 +35,14 @@ namespace GPR202_Assessment3
         public void Add(EnemyAI enemy)
         {
             if (enemy == null) throw new ArgumentNullException(nameof(enemy));
-            enemies.Add(enemy);
+            // If the same EnemyAI instance is added more than once as a template,
+            // clone it so each spawned plane is independent and isn't updated multiple times per tick.
+            enemies.Add(enemies.Contains(enemy) ? enemy.Clone() : enemy);
         }
+
+        public float AggressorSpawnRadius { get; set; } = 3680f;
+        public float WandererSpawnRadius { get; set; } = 3760f;
+        public float BomberSpawnRadius { get; set; } = 3820f;
 
         public void Clear() => enemies.Clear();
 
@@ -51,17 +57,17 @@ namespace GPR202_Assessment3
             for (int i = 0; i < count; i++)
             {
                 var enemy = enemies[i];
-                // Distribute enemies evenly around the player at comfortable combat range.
+                // Distribute enemies evenly around the outer airspace well away from the player's spawn.
                 float angle = (MathF.Tau * i / Math.Max(1, count)) + 0.45f;
                 float radius = enemy.Personality switch
                 {
-                    EnemyPersonality.Aggressor => 320f,
-                    EnemyPersonality.Bomber => 420f,
-                    _ => 380f
+                    EnemyPersonality.Aggressor => AggressorSpawnRadius,
+                    EnemyPersonality.Bomber => BomberSpawnRadius,
+                    _ => WandererSpawnRadius
                 };
 
-                float sx = Math.Clamp(playerPosition.X + MathF.Sin(angle) * radius, -820f, 820f);
-                float sz = Math.Clamp(playerPosition.Z + MathF.Cos(angle) * radius, -820f, 820f);
+                float sx = Math.Clamp(playerPosition.X + MathF.Sin(angle) * radius, -880f, 880f);
+                float sz = Math.Clamp(playerPosition.Z + MathF.Cos(angle) * radius, -880f, 880f);
                 float groundY = terrainHeightProvider(sx, sz);
                 float extraAlt = enemy.Personality == EnemyPersonality.Bomber ? 220f : 140f;
                 float sy = Math.Max(groundY + extraAlt, playerPosition.Y + (enemy.Personality == EnemyPersonality.Bomber ? 110f : 20f));
@@ -73,13 +79,23 @@ namespace GPR202_Assessment3
         }
     }
 
-    // Coordinates enemy squadrons, AI updates, combat damage exchange, and player health.
+    public enum GamePhase
+    {
+        BalloonHunt,
+        EnemyCombat,
+        Victory
+    }
+
+    // Coordinates game progression, enemy squadrons, AI updates, combat damage exchange, and player health.
     public sealed class GameManager
     {
         public const float MaxPlayerHealth = Plane.DefaultMaxHealth;
 
         public EnemySpawner EnemySpawner { get; } = new();
         public EnemyFlightSettings EnemyFlightSettings { get; }
+        public GamePhase Phase { get; private set; } = GamePhase.BalloonHunt;
+        public bool PlayerWeaponsEnabled => Phase != GamePhase.BalloonHunt;
+        public bool IsVictory => Phase == GamePhase.Victory;
         public float PlayerHealth { get; private set; } = MaxPlayerHealth;
         public int EnemiesDestroyed { get; private set; }
 
@@ -93,26 +109,53 @@ namespace GPR202_Assessment3
         {
             EnemySpawner.Clear();
 
-            var enemy1 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns, 500, 0, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
-            var enemy2 = new EnemyAI(EnemyPersonality.Wanderer, EnemyWeapon.Missiles, 0, 15, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
-            var enemy3 = new EnemyAI(EnemyPersonality.Bomber, EnemyWeapon.Bombs, 0, 0, 14, Plane.DefaultMaxHealth, EnemyFlightSettings);
-            var enemy4 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns | EnemyWeapon.Missiles, 550, 2, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
-
+            var enemy1 = new EnemyAI(EnemyPersonality.Aggressor, 500, 2, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
+            var enemy2 = new EnemyAI(EnemyPersonality.Wanderer, 500, 2, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
+            var enemy3 = new EnemyAI(EnemyPersonality.Bomber, 500, 2, 14, Plane.DefaultMaxHealth, EnemyFlightSettings);
+           
             EnemySpawner.Add(enemy1);
-            //EnemySpawner.Add(enemy2);
-            //EnemySpawner.Add(enemy3);
-            //EnemySpawner.Add(enemy4);
+            EnemySpawner.Add(enemy1);
+            EnemySpawner.Add(enemy1);
+            EnemySpawner.Add(enemy2);
+            EnemySpawner.Add(enemy2);
+            EnemySpawner.Add(enemy2);
+            EnemySpawner.Add(enemy3);
+            EnemySpawner.Add(enemy3);
+            EnemySpawner.Add(enemy3);
 
             EnemySpawner.SpawnAll();
         }
 
+        // Resets to Phase 1 (BalloonHunt): player weapons disabled, no enemies spawned yet.
         public void ResetForNewGame(Vector3 playerSpawnPos, Func<float, float, float> getTerrainHeight, Plane? playerPlane = null)
         {
             playerPlane?.ResetHealth();
             PlayerHealth = playerPlane?.Health ?? MaxPlayerHealth;
             EnemiesDestroyed = 0;
+            Phase = GamePhase.BalloonHunt;
+            EnemySpawner.Clear();
             EnemySpawner.ConfigureSpawnContext(playerSpawnPos, getTerrainHeight);
+        }
+
+        // Advances from BalloonHunt -> EnemyCombat: enables player weapons and spawns enemies around the player.
+        public bool OnAllBalloonsPopped(Vector3 playerPos, Func<float, float, float> getTerrainHeight)
+        {
+            if (Phase != GamePhase.BalloonHunt) return false;
+            Phase = GamePhase.EnemyCombat;
+            EnemySpawner.ConfigureSpawnContext(playerPos, getTerrainHeight);
             SetupEnemies();
+            return true;
+        }
+
+        // Checks whether all spawned enemy planes have been destroyed and transitions to Victory once.
+        public bool CheckAndTriggerVictory()
+        {
+            if (Phase == GamePhase.EnemyCombat && EnemySpawner.Enemies.Count > 0 && EnemySpawner.AliveCount == 0)
+            {
+                Phase = GamePhase.Victory;
+                return true;
+            }
+            return false;
         }
 
         public void Update(
@@ -216,6 +259,8 @@ namespace GPR202_Assessment3
                 }
                 else if (ev.TargetId >= 0 && ev.TargetId < enemies.Count)
                 {
+                    // Enemy weapons never damage enemy aircraft (no friendly fire).
+                    if (ev.OwnerId >= 0) continue;
                     var enemy = enemies[ev.TargetId];
                     if (enemy.ApplyDamage(ev.Damage))
                     {

@@ -41,8 +41,14 @@ namespace GPR202_Assessment3
         Camera cam;
         private readonly FlightSettings flightSettings = new();
         private readonly EnemyFlightSettings enemyFlightSettings = new();
+        private readonly Controls controls = new();
         private FlightPhysics flight = null!;
         private float pitchInput, rollInput, yawInput;
+        private bool gamepadActive;
+        private float gamepadPitch, gamepadRoll, gamepadStrafe;
+        private bool gamepadLeveling;
+        private float shoulderLookInput;
+        private float smoothShoulderLookRad;
         private Vector2 virtualStick;
         private Vector3 aimDirection = -Vector3.UnitZ;
         private bool aimInitialized;
@@ -233,7 +239,16 @@ namespace GPR202_Assessment3
                 frameCount = 0;
                 totalTime = 0f;
                 currentFPS = 1 / args.Time;
-                Title = crashed ? "Crashed! Restarting..." : $"GPR2 Balloon Hunt!    HP: {gameManager.PlayerHealth:0}%    Enemies: {gameManager.EnemySpawner.AliveCount}    {(balloons_left == 0 ? "VICTORY!" : "Remaining: " + balloons_left)}    {(flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED")}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    FPS: {currentFPS:0}/{averageFPS:0}";
+                string controlModeLabel = gamepadActive
+                    ? (gamepadLeveling ? "GAMEPAD [LEVEL]" : "GAMEPAD")
+                    : (flightSettings.AssistedControls ? "ASSISTED" : "UNASSISTED");
+                string objectiveLabel = gameManager.Phase switch
+                {
+                    GamePhase.Victory => "VICTORY!",
+                    GamePhase.EnemyCombat => $"Enemies: {gameManager.EnemySpawner.AliveCount}",
+                    _ => $"Balloons: {balloons_left} (Weapons Offline)"
+                };
+                Title = crashed ? "Crashed! Restarting..." : $"GPR2 Balloon Hunt!    HP: {plane.Health:0}/{plane.MaxHealth:0}    {objectiveLabel}    {controlModeLabel}    Airspeed: {flight.Airspeed:0} m/s    AoA: {MathHelper.RadiansToDegrees(flight.AngleOfAttack):0}    {(flight.IsStalled ? "STALL" : "")}    Throttle: {flight.Throttle:P0}    FPS: {currentFPS:0}/{averageFPS:0}";
             }
 
             base.OnUpdateFrame(args);
@@ -265,7 +280,14 @@ namespace GPR202_Assessment3
                     if (crashTime >= 3f) RestartAfterCrash();
                     continue;
                 }
-                flight.Step(FixedDeltaTime, pitchInput, rollInput, yawInput);
+                if (gamepadActive)
+                {
+                    flight.StepGamepad(FixedDeltaTime, gamepadPitch, gamepadRoll, gamepadStrafe, gamepadLeveling, controls.Gamepad.StrafeAcceleration, controls.Gamepad.RollSensitivity);
+                }
+                else
+                {
+                    flight.Step(FixedDeltaTime, pitchInput, rollInput, yawInput);
+                }
                 if (flight.Position.Y < Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z) + 2f)
                 {
                     TriggerPlayerCrash(hitTerrain: true);
@@ -275,7 +297,7 @@ namespace GPR202_Assessment3
                 plane.position = flight.Position;
                 plane.PhysicsOrientation = flight.Orientation;
 
-                StepCombat(FixedDeltaTime, allowFiring: true);
+                StepCombat(FixedDeltaTime, allowFiring: gameManager.PlayerWeaponsEnabled);
 
                 for (int i = m_balloons.Count - 1; i >= 0; i--)
                 {
@@ -312,23 +334,37 @@ namespace GPR202_Assessment3
             Title = "Crashed! Restarting...";
         }
 
+        private void TriggerVictory()
+        {
+            planeMaterial.VictoryGold = true;
+            fireworks.Start(Terrain.width, Terrain.length, Terrain.GetInterpolatedHeightAtWorld);
+            audio?.SetVictory(true);
+            Console.WriteLine("VICTORY! All enemy aircraft destroyed!");
+        }
+
         private void OnBalloonCollected()
         {
             balloons_left = Math.Max(0, balloons_left - 1);
             audio?.PlayBalloonPop();
-            if (balloons_left == 0)
-            {
-                planeMaterial.VictoryGold = true;
-                fireworks.Start(Terrain.width, Terrain.length, Terrain.GetInterpolatedHeightAtWorld);
-                audio?.SetVictory(true);
-            }
             Console.WriteLine("Balloon Collected! " + balloons_left + " remaining.");
+            if (balloons_left == 0 && gameManager.OnAllBalloonsPopped(flight.Position, Terrain.GetInterpolatedHeightAtWorld))
+            {
+                combat.RestockWeapons();
+                plane.ResetOrdnance();
+                triggerGuns = requestMissile = requestBomb = false;
+                Console.WriteLine($"All balloons popped! Weapons ONLINE - {gameManager.EnemySpawner.AliveCount} enemy aircraft inbound!");
+            }
         }
 
         private Vector3 ComputeCrosshairAimPoint()
         {
-            Vector3 rayOrigin = cameraReady ? smoothCamera : plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
-            Vector3 rayTarget = cameraReady ? smoothTarget : plane.position + flight.Forward * 8f;
+            bool lookingShoulder = MathF.Abs(smoothShoulderLookRad) > 0.08f;
+            Vector3 rayOrigin = (cameraReady && !lookingShoulder)
+                ? smoothCamera
+                : plane.position - flight.Forward * Math.Max(1f, flightSettings.CameraDistance) + Vector3.UnitY * 4.5f;
+            Vector3 rayTarget = (cameraReady && !lookingShoulder)
+                ? smoothTarget
+                : plane.position + flight.Forward * 35f + Vector3.UnitY * 2f;
             Vector3 rayDir = rayTarget - rayOrigin;
             rayDir = rayDir.LengthSquared > 1e-6f ? Vector3.Normalize(rayDir) : flight.Forward;
 
@@ -382,7 +418,12 @@ namespace GPR202_Assessment3
 
         private void StepCombat(float dt, bool allowFiring)
         {
-            if (allowFiring)
+            if (!allowFiring)
+            {
+                requestMissile = false;
+                requestBomb = false;
+            }
+            else
             {
                 Matrix4 planeModel = plane.ModelMatrix;
                 Vector3 aimPoint = ComputeCrosshairAimPoint();
@@ -427,7 +468,8 @@ namespace GPR202_Assessment3
                 onEnemyDestroyed: pos =>
                 {
                     audio?.PlayExplosion();
-                    Console.WriteLine($"Enemy aircraft destroyed! Remaining: {gameManager.EnemySpawner.AliveCount}");
+                    Console.WriteLine($"Enemy aircraft crashed into terrain! Remaining: {gameManager.EnemySpawner.AliveCount}");
+                    if (gameManager.CheckAndTriggerVictory()) TriggerVictory();
                 },
                 onEnemyGunShot: () => audio?.PlayGunShot(),
                 onEnemyMissileLaunch: () => audio?.PlayMissileLaunch(),
@@ -472,6 +514,7 @@ namespace GPR202_Assessment3
             {
                 audio?.PlayExplosion();
                 Console.WriteLine($"Enemy aircraft shot down! Remaining: {gameManager.EnemySpawner.AliveCount}");
+                if (gameManager.CheckAndTriggerVictory()) TriggerVictory();
             }) && !crashed)
             {
                 TriggerPlayerCrash(hitTerrain: false);
@@ -496,6 +539,11 @@ namespace GPR202_Assessment3
             plane.position = flight.Position;
             plane.PhysicsOrientation = flight.Orientation;
             pitchInput = rollInput = yawInput = 0f;
+            gamepadPitch = gamepadRoll = gamepadStrafe = 0f;
+            gamepadLeveling = false;
+            shoulderLookInput = 0f;
+            smoothShoulderLookRad = 0f;
+            controls.Gamepad.CancelLeveling();
             virtualStick = Vector2.Zero;
             aimDirection = flight.Forward;
             aimInitialized = true;
@@ -539,8 +587,20 @@ namespace GPR202_Assessment3
                 aimDirection = flight.Forward;
                 virtualStick = Vector2.Zero;
             }
+            if (KeyboardState.IsKeyPressed(controls.ToggleCursorConvergenceKey))
+            {
+                bool enabled = controls.ToggleCursorConvergence();
+                aimDirection = flight.Forward;
+                virtualStick = Vector2.Zero;
+                Console.WriteLine($"Cursor converges back: {(enabled ? "ON" : "OFF")}");
+            }
+            // Separate gamepad control path (Left Stick X=Roll, Left/Right Stick Y=Pitch,
+            // Right Stick X=Strafe, Right Stick Click=Level Plane, Back=Restock Ammo, D-Pad L/R=Shoulder Look).
+            GamepadInputState gp = controls.Gamepad.Poll(JoystickStates);
+            shoulderLookInput = gp.LookShoulder;
+
             if (KeyboardState.IsKeyPressed(Keys.H)) shadowSettings.CockpitHudEnabled = !shadowSettings.CockpitHudEnabled;
-            if (KeyboardState.IsKeyPressed(Keys.R))
+            if ((KeyboardState.IsKeyPressed(Keys.R) || gp.RestockAmmoPressed) && gameManager.PlayerWeaponsEnabled)
             {
                 combat.RestockWeapons();
                 plane.ResetOrdnance();
@@ -556,81 +616,146 @@ namespace GPR202_Assessment3
             bool arrowOverride = KeyboardState.IsKeyDown(Keys.Up) || KeyboardState.IsKeyDown(Keys.Down)
                 || KeyboardState.IsKeyDown(Keys.Left) || KeyboardState.IsKeyDown(Keys.Right);
 
-            if (flightSettings.AssistedControls)
+            if (gp.HasAnyInput)
             {
-                // Unrestricted War-Thunder-style mouse-aim pointer:
-                // place the grey circle anywhere on screen and flight assist steers the plane onto it.
-                if (CursorState == CursorState.Grabbed)
-                {
-                    if (ignoreNextMouseDelta)
-                    {
-                        ignoreNextMouseDelta = false;
-                    }
-                    else if (MouseState.Delta.LengthSquared > 0f)
-                    {
-                        float radPerPx = MathHelper.DegreesToRadians(65f) / Math.Max(1f, ClientSize.Y);
-                        float curYaw = MathF.Atan2(aimDirection.X, -aimDirection.Z);
-                        float curPitch = MathF.Asin(Math.Clamp(aimDirection.Y, -1f, 1f));
-                        curYaw += MouseState.Delta.X * radPerPx;
-                        curPitch = Math.Clamp(curPitch - MouseState.Delta.Y * radPerPx, -1.25f, 1.25f);
-                        float cp = MathF.Cos(curPitch);
-                        aimDirection = Vector3.Normalize(new Vector3(MathF.Sin(curYaw) * cp, MathF.Sin(curPitch), -MathF.Cos(curYaw) * cp));
+                gamepadActive = true;
+            }
+            else if (arrowOverride
+                || KeyboardState.IsKeyPressed(Keys.F2)
+                || KeyboardState.IsKeyPressed(controls.ToggleCursorConvergenceKey)
+                || (CursorState == CursorState.Grabbed && !ignoreNextMouseDelta && MouseState.Delta.LengthSquared > 9f))
+            {
+                gamepadActive = false;
+                gamepadLeveling = false;
+                controls.Gamepad.CancelLeveling();
+            }
 
-                        // Keep the aim cursor clamped inside the visible screen bounds so it never gets lost behind the camera.
-                        if (cameraReady)
+            if (gamepadActive)
+            {
+                gamepadRoll = gp.Roll;
+                gamepadPitch = gp.Pitch;
+                gamepadStrafe = gp.Strafe;
+                gamepadLeveling = controls.Gamepad.UpdateLeveling(gp, flight.IsApproximatelyLevel);
+                aimDirection = flight.Forward;
+                virtualStick = Vector2.Zero;
+                if (CursorState == CursorState.Grabbed && ignoreNextMouseDelta)
+                {
+                    ignoreNextMouseDelta = false;
+                }
+            }
+            else if (flightSettings.AssistedControls)
+            {
+                if (controls.CursorConvergesBack)
+                {
+                    // Unrestricted War-Thunder-style mouse-aim pointer:
+                    // place the grey circle anywhere on screen and flight assist steers the plane onto it,
+                    // naturally springing the cursor back toward the crosshair as the nose aligns.
+                    if (CursorState == CursorState.Grabbed)
+                    {
+                        if (ignoreNextMouseDelta)
                         {
-                            Vector4 clip = new Vector4(smoothCamera + aimDirection * 500f, 1f) * lastView * lastProj;
-                            bool outOfView = clip.W <= 0.001f
-                                || MathF.Abs(clip.X / clip.W) > 0.94f
-                                || MathF.Abs(clip.Y / clip.W) > 0.92f;
-                            if (outOfView)
+                            ignoreNextMouseDelta = false;
+                        }
+                        else if (MouseState.Delta.LengthSquared > 0f)
+                        {
+                            float radPerPx = MathHelper.DegreesToRadians(65f) / Math.Max(1f, ClientSize.Y);
+                            float curYaw = MathF.Atan2(aimDirection.X, -aimDirection.Z);
+                            float curPitch = MathF.Asin(Math.Clamp(aimDirection.Y, -1f, 1f));
+                            curYaw += MouseState.Delta.X * radPerPx;
+                            curPitch = Math.Clamp(curPitch - MouseState.Delta.Y * radPerPx, -1.25f, 1.25f);
+                            float cp = MathF.Cos(curPitch);
+                            aimDirection = Vector3.Normalize(new Vector3(MathF.Sin(curYaw) * cp, MathF.Sin(curPitch), -MathF.Cos(curYaw) * cp));
+
+                            // Keep the aim cursor clamped inside the visible screen bounds so it never gets lost behind the camera.
+                            if (cameraReady)
                             {
-                                float nx = clip.W > 0.001f ? Math.Clamp(clip.X / clip.W, -0.94f, 0.94f) : MathF.Sign(MouseState.Delta.X) * 0.94f;
-                                float ny = clip.W > 0.001f ? Math.Clamp(clip.Y / clip.W, -0.92f, 0.92f) : MathF.Sign(-MouseState.Delta.Y) * 0.92f;
-                                aimDirection = UnprojectScreenNdcToDirection(nx, ny);
+                                Vector4 clip = new Vector4(smoothCamera + aimDirection * 500f, 1f) * lastView * lastProj;
+                                bool outOfView = clip.W <= 0.001f
+                                    || MathF.Abs(clip.X / clip.W) > 0.94f
+                                    || MathF.Abs(clip.Y / clip.W) > 0.92f;
+                                if (outOfView)
+                                {
+                                    float nx = clip.W > 0.001f ? Math.Clamp(clip.X / clip.W, -0.94f, 0.94f) : MathF.Sign(MouseState.Delta.X) * 0.94f;
+                                    float ny = clip.W > 0.001f ? Math.Clamp(clip.Y / clip.W, -0.92f, 0.92f) : MathF.Sign(-MouseState.Delta.Y) * 0.92f;
+                                    aimDirection = UnprojectScreenNdcToDirection(nx, ny);
+                                }
                             }
                         }
                     }
-                }
-                else if (cameraReady)
-                {
-                    float ndcX = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -0.96f, 0.96f);
-                    float ndcY = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -0.94f, 0.94f);
-                    aimDirection = UnprojectScreenNdcToDirection(ndcX, ndcY);
-                }
+                    else if (cameraReady)
+                    {
+                        float ndcX = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -0.96f, 0.96f);
+                        float ndcY = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -0.94f, 0.94f);
+                        aimDirection = UnprojectScreenNdcToDirection(ndcX, ndcY);
+                    }
 
-                if (arrowOverride)
-                {
-                    float keyPitch = (KeyboardState.IsKeyDown(Keys.Down) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.Up) ? 1f : 0f);
-                    float keyRoll = (KeyboardState.IsKeyDown(Keys.Right) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.Left) ? 1f : 0f);
-                    pitchInput = keyPitch;
-                    rollInput = keyRoll;
-                    aimDirection = flight.Forward;
+                    if (arrowOverride)
+                    {
+                        float keyPitch = (KeyboardState.IsKeyDown(Keys.Down) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.Up) ? 1f : 0f);
+                        float keyRoll = (KeyboardState.IsKeyDown(Keys.Right) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.Left) ? 1f : 0f);
+                        pitchInput = keyPitch;
+                        rollInput = keyRoll;
+                        aimDirection = flight.Forward;
+                    }
+                    else
+                    {
+                        // Steer the aircraft smoothly toward aimDirection (horizon-relative yaw & pitch errors);
+                        // large edge deflections drive rollInput toward +/-1 to trigger heavy high-G turns.
+                        Vector3 fwdFlat = new Vector3(flight.Forward.X, 0f, flight.Forward.Z);
+                        if (fwdFlat.LengthSquared < 1e-4f) fwdFlat = Vector3.UnitZ;
+                        fwdFlat.Normalize();
+                        Vector3 starboard = Vector3.Normalize(Vector3.Cross(fwdFlat, Vector3.UnitY));
+
+                        Vector3 aimFlat = new Vector3(aimDirection.X, 0f, aimDirection.Z);
+                        float yawErr = 0f;
+                        if (aimFlat.LengthSquared > 1e-4f)
+                        {
+                            aimFlat.Normalize();
+                            yawErr = MathF.Atan2(Vector3.Dot(aimFlat, starboard), Vector3.Dot(aimFlat, fwdFlat));
+                        }
+
+                        float curPitch = MathF.Asin(Math.Clamp(flight.Forward.Y, -1f, 1f));
+                        float aimPitch = MathF.Asin(Math.Clamp(aimDirection.Y, -1f, 1f));
+                        float pitchErr = aimPitch - curPitch;
+
+                        rollInput = Math.Clamp(yawErr / 0.50f, -1f, 1f);
+                        pitchInput = Math.Clamp(pitchErr / 0.38f, -1f, 1f);
+                        if (MathF.Abs(rollInput) < 0.015f) rollInput = 0f;
+                        if (MathF.Abs(pitchInput) < 0.015f) pitchInput = 0f;
+                    }
                 }
                 else
                 {
-                    // Steer the aircraft smoothly toward aimDirection (horizon-relative yaw & pitch errors).
-                    Vector3 fwdFlat = new Vector3(flight.Forward.X, 0f, flight.Forward.Z);
-                    if (fwdFlat.LengthSquared < 1e-4f) fwdFlat = Vector3.UnitZ;
-                    fwdFlat.Normalize();
-                    Vector3 starboard = Vector3.Normalize(Vector3.Cross(fwdFlat, Vector3.UnitY));
-
-                    Vector3 aimFlat = new Vector3(aimDirection.X, 0f, aimDirection.Z);
-                    float yawErr = 0f;
-                    if (aimFlat.LengthSquared > 1e-4f)
+                    // Direct unrestricted screen-space cursor (no convergence back to center).
+                    if (CursorState == CursorState.Grabbed)
                     {
-                        aimFlat.Normalize();
-                        yawErr = MathF.Atan2(Vector3.Dot(aimFlat, starboard), Vector3.Dot(aimFlat, fwdFlat));
+                        if (ignoreNextMouseDelta)
+                        {
+                            ignoreNextMouseDelta = false;
+                        }
+                        else
+                        {
+                            float halfW = Math.Max(1f, ClientSize.X * 0.5f);
+                            float halfH = Math.Max(1f, ClientSize.Y * 0.5f);
+                            virtualStick.X = Math.Clamp(virtualStick.X + MouseState.Delta.X / halfW, -0.95f, 0.95f);
+                            virtualStick.Y = Math.Clamp(virtualStick.Y - MouseState.Delta.Y / halfH, -0.93f, 0.93f);
+                        }
+                    }
+                    else
+                    {
+                        virtualStick.X = Math.Clamp(2f * MouseState.X / Math.Max(1, ClientSize.X) - 1f, -0.95f, 0.95f);
+                        virtualStick.Y = Math.Clamp(1f - 2f * MouseState.Y / Math.Max(1, ClientSize.Y), -0.93f, 0.93f);
                     }
 
-                    float curPitch = MathF.Asin(Math.Clamp(flight.Forward.Y, -1f, 1f));
-                    float aimPitch = MathF.Asin(Math.Clamp(aimDirection.Y, -1f, 1f));
-                    float pitchErr = aimPitch - curPitch;
+                    float normX = Math.Clamp(virtualStick.X / 0.95f, -1f, 1f);
+                    float normY = Math.Clamp(virtualStick.Y / 0.93f, -1f, 1f);
+                    rollInput = MathF.Abs(normX) < 0.04f ? 0f : normX;
+                    pitchInput = MathF.Abs(normY) < 0.04f ? 0f : normY;
 
-                    rollInput = Math.Clamp(yawErr / 0.45f, -1f, 1f);
-                    pitchInput = Math.Clamp(pitchErr / 0.38f, -1f, 1f);
-                    if (MathF.Abs(rollInput) < 0.015f) rollInput = 0f;
-                    if (MathF.Abs(pitchInput) < 0.015f) pitchInput = 0f;
+                    if (KeyboardState.IsKeyDown(Keys.Up)) pitchInput = 1f;
+                    if (KeyboardState.IsKeyDown(Keys.Down)) pitchInput = -1f;
+                    if (KeyboardState.IsKeyDown(Keys.Left)) rollInput = -1f;
+                    if (KeyboardState.IsKeyDown(Keys.Right)) rollInput = 1f;
                 }
 
                 yawInput = -((KeyboardState.IsKeyDown(Keys.D) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.A) ? 1f : 0f));
@@ -670,14 +795,17 @@ namespace GPR202_Assessment3
                 pitchInput = -pitchInput;
                 yawInput = -yawInput;
             }
-            flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * 0.4f
-                * ((KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f)), 0f, 1f);
+            float throttleKeyDelta = (KeyboardState.IsKeyDown(Keys.W) ? 1f : 0f) - (KeyboardState.IsKeyDown(Keys.S) ? 1f : 0f);
+            float throttleDelta = throttleKeyDelta != 0f
+                ? throttleKeyDelta * 0.4f
+                : gp.ThrottleDelta * controls.Gamepad.ThrottleRate;
+            flight.Throttle = Math.Clamp(flight.Throttle + Math.Min(deltaT, 0.1f) * throttleDelta, 0f, 1f);
 
-            // Combat controls: LMB/Space = wing machine guns, RMB/Q/F = missiles, MMB/B/E = large bombs.
-            triggerGuns = MouseState.IsButtonDown(MouseButton.Left) || KeyboardState.IsKeyDown(Keys.Space);
-            if (MouseState.IsButtonPressed(MouseButton.Right) || KeyboardState.IsKeyPressed(Keys.Q) || KeyboardState.IsKeyPressed(Keys.F))
+            // Combat controls: LMB/Space/Gamepad RT/A = wing machine guns, RMB/Q/F/RB/X = missiles, MMB/B/E/LB/B = large bombs.
+            triggerGuns = MouseState.IsButtonDown(MouseButton.Left) || KeyboardState.IsKeyDown(Keys.Space) || gp.FireGuns;
+            if (MouseState.IsButtonPressed(MouseButton.Right) || KeyboardState.IsKeyPressed(Keys.Q) || KeyboardState.IsKeyPressed(Keys.F) || gp.FireMissilePressed)
                 requestMissile = true;
-            if (MouseState.IsButtonPressed(MouseButton.Middle) || KeyboardState.IsKeyPressed(Keys.B) || KeyboardState.IsKeyPressed(Keys.E))
+            if (MouseState.IsButtonPressed(MouseButton.Middle) || KeyboardState.IsKeyPressed(Keys.B) || KeyboardState.IsKeyPressed(Keys.E) || gp.DropBombPressed)
                 requestBomb = true;
         }
 
@@ -734,12 +862,35 @@ namespace GPR202_Assessment3
                     }
                 }
 
+                float targetShoulderRad = shoulderLookInput * MathHelper.DegreesToRadians(Math.Clamp(controls.Gamepad.ShoulderLookAngleDegrees, 30f, 165f));
+                float lookBlend = 1f - MathF.Exp(-Math.Max(2f, controls.Gamepad.ShoulderLookSpeed) * camDt);
+                smoothShoulderLookRad += (targetShoulderRad - smoothShoulderLookRad) * lookBlend;
+                if (MathF.Abs(smoothShoulderLookRad) < 0.001f && shoulderLookInput == 0f) smoothShoulderLookRad = 0f;
+
+                Vector3 lookDir = smoothCamForward;
+                if (MathF.Abs(smoothShoulderLookRad) > 0.001f)
+                {
+                    Vector3 flatFwd = new Vector3(smoothCamForward.X, 0f, smoothCamForward.Z);
+                    if (flatFwd.LengthSquared > 1e-4f)
+                    {
+                        flatFwd.Normalize();
+                        Vector3 starboard = Vector3.Normalize(Vector3.Cross(flatFwd, Vector3.UnitY));
+                        float c = MathF.Cos(smoothShoulderLookRad);
+                        float s = MathF.Sin(smoothShoulderLookRad);
+                        float horizLen = MathF.Sqrt(Math.Max(0f, 1f - smoothCamForward.Y * smoothCamForward.Y));
+                        Vector3 rotatedFlat = flatFwd * c + starboard * s;
+                        // Ease vertical pitch slightly toward horizon when glancing over the shoulder for a clear rear view.
+                        float shoulderPitchY = smoothCamForward.Y * Math.Clamp(c, 0f, 1f);
+                        lookDir = Vector3.Normalize(rotatedFlat * horizLen + Vector3.UnitY * shoulderPitchY);
+                    }
+                }
+
                 float speedOffset = Math.Clamp((flight.Airspeed - flightSettings.StartSpeed) * 0.04f, -2f, 4f);
                 float camDist = Math.Max(10f, flightSettings.CameraDistance) + speedOffset;
-                camWorldPos = plane.position - smoothCamForward * camDist + Vector3.UnitY * 5.0f;
+                camWorldPos = plane.position - lookDir * camDist + Vector3.UnitY * 5.0f;
                 float minCamY = Terrain.GetInterpolatedHeightAtWorld(camWorldPos.X, camWorldPos.Z) + 2.0f;
                 if (camWorldPos.Y < minCamY) camWorldPos.Y = minCamY;
-                cameraTarget = plane.position + smoothCamForward * 35f + Vector3.UnitY * 2.0f;
+                cameraTarget = plane.position + lookDir * 35f + Vector3.UnitY * 2.0f;
                 smoothCamera = camWorldPos;
                 smoothTarget = cameraTarget;
             }
@@ -857,11 +1008,17 @@ namespace GPR202_Assessment3
             if (cockpitHud != null)
             {
                 float groundHeight = Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z);
-                Vector2 aimOffsetPx = flightSettings.AssistedControls
-                    ? ProjectDirectionToScreenOffsetPx(aimDirection, FramebufferSize.X, FramebufferSize.Y)
-                    : new Vector2(virtualStick.X * FramebufferSize.X * 0.45f, virtualStick.Y * FramebufferSize.Y * 0.45f);
-                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime, combat, aimOffsetPx, plane.Health, plane.MaxHealth);
-                cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y, showInstruments: shadowSettings.CockpitHudEnabled, showCrosshair: !crashed);
+                Vector2 aimOffsetPx = gamepadActive
+                    ? Vector2.Zero
+                    : (flightSettings.AssistedControls
+                        ? (controls.CursorConvergesBack
+                            ? ProjectDirectionToScreenOffsetPx(aimDirection, FramebufferSize.X, FramebufferSize.Y)
+                            : new Vector2(virtualStick.X * FramebufferSize.X * 0.5f, virtualStick.Y * FramebufferSize.Y * 0.5f))
+                        : new Vector2(virtualStick.X * FramebufferSize.X * 0.45f, virtualStick.Y * FramebufferSize.Y * 0.45f));
+                int enemiesRemaining = gameManager?.EnemySpawner.AliveCount ?? 0;
+                CombatSimulation? hudCombat = gameManager != null && gameManager.PlayerWeaponsEnabled ? combat : null;
+                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime, hudCombat, aimOffsetPx, plane.Health, plane.MaxHealth, enemiesRemaining);
+                cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y, showInstruments: shadowSettings.CockpitHudEnabled, showCrosshair: !crashed && MathF.Abs(smoothShoulderLookRad) < 0.08f);
             }
 
             this.Context.SwapBuffers();

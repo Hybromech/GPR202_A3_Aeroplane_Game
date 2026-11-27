@@ -30,7 +30,9 @@ namespace GPR202_Assessment3
         public float PitchAuthority { get; set; } = 1.5f;
         // Roll angular acceleration coefficient; scaled by airspeed and opposed by damping.
         public float RollAuthority { get; set; } = 3.0f;
-        // Maximum absolute bank relative to the horizon.
+        // Enable or disable clamping bank angle to MaxBankAngleDegrees (false allows full 360-degree rolls).
+        public bool EnableMaxBankAngle { get; set; } = false;
+        // Maximum absolute bank relative to the horizon (when EnableMaxBankAngle is true).
         public float MaxBankAngleDegrees { get; set; } = 90f;
         public float YawAuthority { get; set; } = 0.6f;
         // Fraction of full throttle per wheel notch (0.05 = 5%).

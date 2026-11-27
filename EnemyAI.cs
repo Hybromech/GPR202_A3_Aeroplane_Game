@@ -10,16 +10,6 @@ namespace GPR202_Assessment3
         Bomber
     }
 
-    [Flags]
-    public enum EnemyWeapon
-    {
-        None = 0,
-        MachineGuns = 1 << 0,
-        Missiles = 1 << 1,
-        Bombs = 1 << 2,
-        All = MachineGuns | Missiles | Bombs
-    }
-
     public readonly struct EnemyFireCommand
     {
         public bool FireGuns { get; init; }
@@ -47,7 +37,6 @@ namespace GPR202_Assessment3
         public FlightPhysics Flight { get; }
         public Plane Plane { get; }
         public EnemyPersonality Personality { get; }
-        public EnemyWeapon EquippedWeapon { get; }
 
         public int InitialMachineGunAmmo { get; }
         public int InitialMissileAmmo { get; }
@@ -94,19 +83,17 @@ namespace GPR202_Assessment3
 
         public EnemyAI(
             EnemyPersonality personality,
-            EnemyWeapon weapon,
             int machineGunAmmo,
             int missileAmmo,
             int bombAmmo,
             EnemyFlightSettings? flightSettings = null,
             int? seed = null)
-            : this(personality, weapon, machineGunAmmo, missileAmmo, bombAmmo, Plane.DefaultMaxHealth, flightSettings, seed)
+            : this(personality, machineGunAmmo, missileAmmo, bombAmmo, Plane.DefaultMaxHealth, flightSettings, seed)
         {
         }
 
         public EnemyAI(
             EnemyPersonality personality,
-            EnemyWeapon weapon,
             int machineGunAmmo,
             int missileAmmo,
             int bombAmmo,
@@ -115,7 +102,6 @@ namespace GPR202_Assessment3
             int? seed = null)
         {
             Personality = personality;
-            EquippedWeapon = weapon;
             InitialMachineGunAmmo = Math.Max(0, machineGunAmmo);
             InitialMissileAmmo = Math.Max(0, missileAmmo);
             InitialBombAmmo = Math.Max(0, bombAmmo);
@@ -130,6 +116,18 @@ namespace GPR202_Assessment3
             rng = seed.HasValue ? new Random(seed.Value) : new Random(Random.Shared.Next());
 
             ResetLoadout();
+        }
+
+        // Creates an independent EnemyAI copy with the same personality, ammo, health, and flight settings.
+        public EnemyAI Clone()
+        {
+            return new EnemyAI(
+                Personality,
+                InitialMachineGunAmmo,
+                InitialMissileAmmo,
+                InitialBombAmmo,
+                Plane.MaxHealth,
+                flightSettings);
         }
 
         private void ResetLoadout()
@@ -147,21 +145,19 @@ namespace GPR202_Assessment3
             Plane.ResetHealth();
 
             Array.Fill(MountedMissiles, false);
-            int visualMissiles = Math.Min(Plane.MissileCount, HasWeapon(EnemyWeapon.Missiles) ? MissileAmmo : 0);
+            int visualMissiles = Math.Min(Plane.MissileCount, MissileAmmo);
             for (int i = 0; i < visualMissiles; i++)
             {
                 MountedMissiles[MissileLaunchOrder[i]] = true;
             }
 
             Array.Fill(MountedBombs, false);
-            int visualBombs = Math.Min(Plane.BombCount, HasWeapon(EnemyWeapon.Bombs) ? BombAmmo : 0);
+            int visualBombs = Math.Min(Plane.BombCount, BombAmmo);
             for (int i = 0; i < visualBombs; i++)
             {
                 MountedBombs[BombLaunchOrder[i]] = true;
             }
         }
-
-        public bool HasWeapon(EnemyWeapon weapon) => (EquippedWeapon & weapon) != 0;
 
         public void Spawn(Vector3 position, Vector3 initialHeadingDirection)
         {
@@ -487,7 +483,7 @@ namespace GPR202_Assessment3
             int bombSlot = -1;
 
             // --- Machine Guns ---
-            if (canSeePlayer && HasWeapon(EnemyWeapon.MachineGuns) && MachineGunAmmo > 0 && gunCooldown <= 0f)
+            if (canSeePlayer && MachineGunAmmo > 0 && gunCooldown <= 0f)
             {
                 float maxGunRange = Personality == EnemyPersonality.Aggressor ? 340f : 260f;
                 float minCosCone = Personality == EnemyPersonality.Aggressor ? 0.94f : 0.90f; // ~20 deg vs ~26 deg
@@ -509,7 +505,7 @@ namespace GPR202_Assessment3
             }
 
             // --- Missiles ---
-            if (canSeePlayer && HasWeapon(EnemyWeapon.Missiles) && MissileAmmo > 0 && missileCooldown <= 0f)
+            if (canSeePlayer && MissileAmmo > 0 && missileCooldown <= 0f)
             {
                 float minRange = 75f;
                 float maxRange = Personality == EnemyPersonality.Aggressor ? 520f : 420f;
@@ -535,7 +531,7 @@ namespace GPR202_Assessment3
             }
 
             // --- Bombs ---
-            if (HasWeapon(EnemyWeapon.Bombs) && BombAmmo > 0 && bombCooldown <= 0f)
+            if (BombAmmo > 0 && bombCooldown <= 0f)
             {
                 float heightAbove = Flight.Position.Y - playerPos.Y;
                 if (heightAbove >= 25f && heightAbove <= 260f)

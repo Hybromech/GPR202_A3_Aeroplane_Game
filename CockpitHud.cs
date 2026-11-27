@@ -24,6 +24,7 @@ namespace GPR202_Assessment3
         public Vector2 AimCursorOffsetPx { get; init; } // Pixel offset of the unrestricted aim circle from screen center
         public float PlayerHealth { get; init; }
         public float PlayerMaxHealth { get; init; }
+        public int EnemiesRemaining { get; init; }
 
         public static CockpitTelemetry FromFlight(
             FlightPhysics flight,
@@ -34,7 +35,8 @@ namespace GPR202_Assessment3
             CombatSimulation? combat = null,
             Vector2 aimCursorOffsetPx = default,
             float playerHealth = Plane.DefaultMaxHealth,
-            float playerMaxHealth = Plane.DefaultMaxHealth)
+            float playerMaxHealth = Plane.DefaultMaxHealth,
+            int enemiesRemaining = 0)
         {
             float pitch = MathF.Asin(Math.Clamp(flight.Forward.Y, -1f, 1f));
             float roll = flight.BankAngle;
@@ -59,7 +61,8 @@ namespace GPR202_Assessment3
                 HitMarker = combat != null ? Math.Clamp(combat.HitMarkerTimer / 0.22f, 0f, 1f) : 0f,
                 AimCursorOffsetPx = aimCursorOffsetPx,
                 PlayerHealth = crashed ? 0f : Math.Max(0f, playerHealth),
-                PlayerMaxHealth = Math.Max(1f, playerMaxHealth)
+                PlayerMaxHealth = Math.Max(1f, playerMaxHealth),
+                EnemiesRemaining = Math.Max(0, enemiesRemaining)
             };
         }
     }
@@ -91,6 +94,7 @@ namespace GPR202_Assessment3
         private readonly int bombsLoc;
         private readonly int playerHealthLoc;
         private readonly int playerHealthFracLoc;
+        private readonly int enemiesRemainingLoc;
 
         private readonly int crossViewportLoc;
         private readonly int crossHitLoc;
@@ -246,6 +250,7 @@ namespace GPR202_Assessment3
             uniform int uBombs;
             uniform int uPlayerHealth;
             uniform float uPlayerHealthFrac;
+            uniform int uEnemiesRemaining;
 
             const float PI = 3.14159265359;
             const float TWO_PI = 6.28318530718;
@@ -312,8 +317,8 @@ namespace GPR202_Assessment3
 
             float DrawNumber(vec2 p, vec2 center, float charH, int value, int minDigits)
             {
-                int v = clamp(value, 0, 9999);
-                int digits = max(minDigits, v >= 1000 ? 4 : (v >= 100 ? 3 : (v >= 10 ? 2 : 1)));
+                int v = clamp(value, 0, 99999);
+                int digits = max(minDigits, v >= 10000 ? 5 : (v >= 1000 ? 4 : (v >= 100 ? 3 : (v >= 10 ? 2 : 1))));
                 float stepX = charH * 0.8;
                 float totalW = float(digits - 1) * stepX + charH * 0.6;
                 vec2 start = vec2(center.x - totalW * 0.5, center.y - charH * 0.5);
@@ -367,6 +372,7 @@ namespace GPR202_Assessment3
             // Letter glyph constants
             const int G_A = 11245;
             const int G_B = 27566;
+            const int G_E = 31143;
             const int G_G = 31087;
             const int G_H = 23533;
             const int G_I = 29847;
@@ -754,42 +760,59 @@ namespace GPR202_Assessment3
                 float dBorder = abs(dStrip) - 0.015;
                 vec3 col = mix(vec3(0.04, 0.05, 0.065), vec3(0.25, 0.29, 0.35), 1.0 - smoothstep(-aa, aa, dBorder));
 
-                // Left bay: Machine gun ammo (GUN 400)
-                float gunLbl = DrawLabel3(lp, vec2(-2.62, 0.0), 0.15, G_G, G_U, G_N);
+                // Subtle bay separators
+                float div1 = 1.0 - smoothstep(-aa, aa, sdSegment(lp, vec2(-2.05, -0.11), vec2(-2.05, 0.11)) - 0.008);
+                float div2 = 1.0 - smoothstep(-aa, aa, sdSegment(lp, vec2( 0.16, -0.11), vec2( 0.16, 0.11)) - 0.008);
+                float div3 = 1.0 - smoothstep(-aa, aa, sdSegment(lp, vec2( 1.94, -0.11), vec2( 1.94, 0.11)) - 0.008);
+                col = mix(col, vec3(0.22, 0.26, 0.32), max(div1, max(div2, div3)) * 0.75);
+
+                // Bay 1: Machine gun ammo (GUN 400)
+                float gunLbl = DrawLabel3(lp, vec2(-3.16, 0.0), 0.15, G_G, G_U, G_N);
                 col = mix(col, vec3(0.74, 0.79, 0.86), gunLbl);
-                float gunNum = DrawNumber(lp, vec2(-1.90, 0.0), 0.17, uGunAmmo, 3);
+                float gunNum = DrawNumber(lp, vec2(-2.52, 0.0), 0.17, uGunAmmo, 3);
                 vec3 gunCol = uGunAmmo == 0 ? vec3(0.95, 0.26, 0.22) : (uGunAmmo <= 80 ? vec3(0.98, 0.72, 0.18) : vec3(0.96, 0.97, 0.99));
                 col = mix(col, gunCol, gunNum);
 
-                // Center bay: 6 Missiles (MSL + 6 pips + count)
-                float mslLbl = DrawLabel3(lp, vec2(-0.88, 0.0), 0.15, G_M, G_S, G_L);
+                // Bay 2: 6 Missiles (MSL + 6 pips + count)
+                float mslLbl = DrawLabel3(lp, vec2(-1.66, 0.0), 0.15, G_M, G_S, G_L);
                 col = mix(col, vec3(0.74, 0.79, 0.86), mslLbl);
                 for (int i = 0; i < 6; i++)
                 {
-                    vec2 pipPos = vec2(-0.42 + float(i) * 0.17, 0.0);
-                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.055, 0.095), 0.02);
+                    vec2 pipPos = vec2(-1.24 + float(i) * 0.155, 0.0);
+                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.050, 0.092), 0.02);
                     bool loaded = i < uMissiles;
                     vec3 pipCol = loaded ? vec3(1.0, 0.62, 0.16) : vec3(0.14, 0.16, 0.20);
                     col = mix(col, pipCol, 1.0 - smoothstep(-aa, aa, dPip));
                 }
-                float mslNum = DrawNumber(lp, vec2(0.72, 0.0), 0.17, uMissiles, 1);
+                float mslNum = DrawNumber(lp, vec2(-0.18, 0.0), 0.17, uMissiles, 1);
                 vec3 mslNumCol = uMissiles == 0 ? vec3(0.95, 0.26, 0.22) : vec3(1.0, 0.80, 0.45);
                 col = mix(col, mslNumCol, mslNum);
 
-                // Right bay: 2 Large Bombs (BMB + 2 pips + count)
-                float bmbLbl = DrawLabel3(lp, vec2(1.70, 0.0), 0.15, G_B, G_M, G_B);
+                // Bay 3: 2 Large Bombs (BMB + 2 pips + count)
+                float bmbLbl = DrawLabel3(lp, vec2(0.56, 0.0), 0.15, G_B, G_M, G_B);
                 col = mix(col, vec3(0.74, 0.79, 0.86), bmbLbl);
                 for (int i = 0; i < 2; i++)
                 {
-                    vec2 pipPos = vec2(2.24 + float(i) * 0.26, 0.0);
-                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.095, 0.095), 0.04);
+                    vec2 pipPos = vec2(1.02 + float(i) * 0.24, 0.0);
+                    float dPip = sdRoundedBox(lp - pipPos, vec2(0.085, 0.090), 0.035);
                     bool loaded = i < uBombs;
                     vec3 pipCol = loaded ? vec3(0.96, 0.34, 0.24) : vec3(0.14, 0.16, 0.20);
                     col = mix(col, pipCol, 1.0 - smoothstep(-aa, aa, dPip));
                 }
-                float bmbNum = DrawNumber(lp, vec2(2.86, 0.0), 0.17, uBombs, 1);
+                float bmbNum = DrawNumber(lp, vec2(1.58, 0.0), 0.17, uBombs, 1);
                 vec3 bmbNumCol = uBombs == 0 ? vec3(0.95, 0.26, 0.22) : vec3(1.0, 0.60, 0.48);
                 col = mix(col, bmbNumCol, bmbNum);
+
+                // Bay 4: Remaining Enemies (diamond indicator + ENM + count)
+                vec2 ep = lp - vec2(2.22, 0.0);
+                float dDiamond = (abs(ep.x) + abs(ep.y)) - 0.085;
+                vec3 enmIconCol = uEnemiesRemaining > 0 ? vec3(0.98, 0.26, 0.22) : vec3(0.24, 0.88, 0.46);
+                col = mix(col, enmIconCol, 1.0 - smoothstep(-aa, aa, dDiamond));
+                float enmLbl = DrawLabel3(lp, vec2(2.64, 0.0), 0.15, G_E, G_N, G_M);
+                col = mix(col, vec3(0.74, 0.79, 0.86), enmLbl);
+                float enmNum = DrawNumber(lp, vec2(3.22, 0.0), 0.17, uEnemiesRemaining, 1);
+                vec3 enmNumCol = uEnemiesRemaining > 0 ? vec3(1.0, 0.38, 0.30) : vec3(0.28, 0.92, 0.48);
+                col = mix(col, enmNumCol, enmNum);
 
                 return vec4(col, stripMask * 0.92);
             }
@@ -915,6 +938,7 @@ namespace GPR202_Assessment3
                 bombsLoc = GL.GetUniformLocation(program, "uBombs");
                 playerHealthLoc = GL.GetUniformLocation(program, "uPlayerHealth");
                 playerHealthFracLoc = GL.GetUniformLocation(program, "uPlayerHealthFrac");
+                enemiesRemainingLoc = GL.GetUniformLocation(program, "uEnemiesRemaining");
 
                 crossViewportLoc = GL.GetUniformLocation(crosshairProgram, "uViewport");
                 crossHitLoc = GL.GetUniformLocation(crosshairProgram, "uHitMarker");
@@ -1006,6 +1030,7 @@ namespace GPR202_Assessment3
                     GL.Uniform1(bombsLoc, Math.Max(0, telemetry.BombsRemaining));
                     GL.Uniform1(playerHealthLoc, (int)MathF.Ceiling(Math.Max(0f, telemetry.PlayerHealth)));
                     GL.Uniform1(playerHealthFracLoc, Math.Clamp(telemetry.PlayerHealth / Math.Max(1f, telemetry.PlayerMaxHealth), 0f, 1f));
+                    GL.Uniform1(enemiesRemainingLoc, Math.Max(0, telemetry.EnemiesRemaining));
                     GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
                 }
 
