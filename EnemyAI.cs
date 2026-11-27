@@ -45,6 +45,7 @@ namespace GPR202_Assessment3
 
         public EnemyFlightSettings FlightSettings => flightSettings;
         public FlightPhysics Flight { get; }
+        public Plane Plane { get; }
         public EnemyPersonality Personality { get; }
         public EnemyWeapon EquippedWeapon { get; }
 
@@ -56,9 +57,10 @@ namespace GPR202_Assessment3
         public int MissileAmmo { get; private set; }
         public int BombAmmo { get; private set; }
 
-        public float MaxHealth { get; }
-        public float Health { get; private set; }
-        public bool IsAlive { get; private set; } = true;
+        public float MaxHealth => Plane.MaxHealth;
+        public float Health => Plane.Health;
+        public float HealthFraction => Plane.HealthFraction;
+        public bool IsAlive => !Plane.IsDestroyed;
         public bool IsSpawned { get; private set; }
 
         public float DetectionProgress { get; private set; }
@@ -98,6 +100,19 @@ namespace GPR202_Assessment3
             int bombAmmo,
             EnemyFlightSettings? flightSettings = null,
             int? seed = null)
+            : this(personality, weapon, machineGunAmmo, missileAmmo, bombAmmo, Plane.DefaultMaxHealth, flightSettings, seed)
+        {
+        }
+
+        public EnemyAI(
+            EnemyPersonality personality,
+            EnemyWeapon weapon,
+            int machineGunAmmo,
+            int missileAmmo,
+            int bombAmmo,
+            float health,
+            EnemyFlightSettings? flightSettings = null,
+            int? seed = null)
         {
             Personality = personality;
             EquippedWeapon = weapon;
@@ -105,8 +120,7 @@ namespace GPR202_Assessment3
             InitialMissileAmmo = Math.Max(0, missileAmmo);
             InitialBombAmmo = Math.Max(0, bombAmmo);
 
-            MaxHealth = personality == EnemyPersonality.Bomber ? 160f : 100f;
-            Health = MaxHealth;
+            Plane = Plane.CreateEntity(health > 0f ? health : Plane.DefaultMaxHealth);
 
             // Give each enemy its own EnemyFlightSettings copy so it uses the same FlightPhysics
             // aerodynamic model while remaining tunable independently of the player.
@@ -130,8 +144,7 @@ namespace GPR202_Assessment3
             nextMissileOrderIdx = 0;
             nextBombOrderIdx = 0;
             DetectionProgress = 0f;
-            Health = MaxHealth;
-            IsAlive = true;
+            Plane.ResetHealth();
 
             Array.Fill(MountedMissiles, false);
             int visualMissiles = Math.Min(Plane.MissileCount, HasWeapon(EnemyWeapon.Missiles) ? MissileAmmo : 0);
@@ -178,21 +191,18 @@ namespace GPR202_Assessment3
         public bool ApplyDamage(float damage)
         {
             if (!IsAlive || damage <= 0f) return false;
-            Health = Math.Max(0f, Health - damage);
-            if (Health <= 0f)
+            bool destroyed = Plane.TakeDamage(damage);
+            if (!destroyed)
             {
-                IsAlive = false;
-                return true;
+                // Getting hit alerts the enemy immediately.
+                DetectionProgress = 1f;
             }
-            // Getting hit alerts the enemy immediately.
-            DetectionProgress = 1f;
-            return false;
+            return destroyed;
         }
 
         public void Kill()
         {
-            Health = 0f;
-            IsAlive = false;
+            Plane.Destroy();
         }
 
         public EnemyFireCommand Update(

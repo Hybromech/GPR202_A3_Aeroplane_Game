@@ -12,13 +12,21 @@ var explosions = new List<CombatExplosionEvent>();
 var emptyTargets = Array.Empty<TargetSphere>();
 var emptyObstacles = Array.Empty<ObstacleBox>();
 
-// 1. Verify initial ammo and bomb > missile blast radius and damage.
+// 1. Verify initial ammo, bullet damage = 2, and bomb > missile blast radius and damage.
 Assert(sim.GunAmmo == 400, "Initial gun ammo must be 400");
 Assert(sim.MissilesRemaining == 6, "Initial missiles must be 6");
 Assert(sim.BombsRemaining == 2, "Initial bombs must be 2");
+Assert(CombatSimulation.BulletDamage == 2f, "One bullet must deal 2 damage");
 Assert(CombatSimulation.BombExplosionRadius > CombatSimulation.MissileExplosionRadius, "Bomb blast radius must exceed missile");
 Assert(CombatSimulation.BombDamage > CombatSimulation.MissileDamage, "Bomb damage must exceed missile");
 Assert(Plane.WingGunMuzzles.Length == 4, "Plane must have 2 machine guns per wing (4 total)");
+
+// Verify Plane health starts at 100 and 50 bullet hits (2 dmg each) destroy it.
+var testPlane = Plane.CreateEntity();
+Assert(testPlane.Health == 100f && testPlane.MaxHealth == 100f && !testPlane.IsDestroyed, "Plane health must default to 100");
+for (int i = 0; i < 49; i++) Assert(!testPlane.TakeDamage(CombatSimulation.BulletDamage), "49 bullets (98 dmg) must not destroy 100 HP plane");
+Assert(testPlane.Health == 2f, "Plane must have 2 HP left after 49 bullets");
+Assert(testPlane.TakeDamage(CombatSimulation.BulletDamage) && testPlane.IsDestroyed && testPlane.Health == 0f, "50th bullet must deplete health and destroy plane");
 
 // 2. Verify wing machine guns fire pairs and pop a balloon on hit.
 Matrix4 planeModel = Matrix4.CreateTranslation(new Vector3(0f, 100f, 0f));

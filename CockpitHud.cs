@@ -22,6 +22,8 @@ namespace GPR202_Assessment3
         public int BombsRemaining { get; init; }
         public float HitMarker { get; init; }         // 0..1 flash intensity
         public Vector2 VirtualStick { get; init; }    // -1..1 virtual stick deflection
+        public float PlayerHealth { get; init; }
+        public float PlayerMaxHealth { get; init; }
 
         public static CockpitTelemetry FromFlight(
             FlightPhysics flight,
@@ -30,7 +32,9 @@ namespace GPR202_Assessment3
             bool crashed,
             float time,
             CombatSimulation? combat = null,
-            Vector2 virtualStick = default)
+            Vector2 virtualStick = default,
+            float playerHealth = Plane.DefaultMaxHealth,
+            float playerMaxHealth = Plane.DefaultMaxHealth)
         {
             float pitch = MathF.Asin(Math.Clamp(flight.Forward.Y, -1f, 1f));
             float roll = flight.BankAngle;
@@ -53,7 +57,9 @@ namespace GPR202_Assessment3
                 MissilesRemaining = combat?.MissilesRemaining ?? 0,
                 BombsRemaining = combat?.BombsRemaining ?? 0,
                 HitMarker = combat != null ? Math.Clamp(combat.HitMarkerTimer / 0.22f, 0f, 1f) : 0f,
-                VirtualStick = virtualStick
+                VirtualStick = virtualStick,
+                PlayerHealth = crashed ? 0f : Math.Max(0f, playerHealth),
+                PlayerMaxHealth = Math.Max(1f, playerMaxHealth)
             };
         }
     }
@@ -83,6 +89,8 @@ namespace GPR202_Assessment3
         private readonly int gunAmmoLoc;
         private readonly int missilesLoc;
         private readonly int bombsLoc;
+        private readonly int playerHealthLoc;
+        private readonly int playerHealthFracLoc;
 
         private readonly int crossViewportLoc;
         private readonly int crossSizeLoc;
@@ -178,12 +186,12 @@ namespace GPR202_Assessment3
 
             void main()
             {
-                // Two-triangle quad covering panel local coords x in [-4.15, 4.15], y in [-1.62, 1.38]
+                // Two-triangle quad covering panel local coords x in [-4.15, 4.15], y in [-2.00, 1.38]
                 const vec2 corners[6] = vec2[6](
-                    vec2(-4.15, -1.62),
-                    vec2( 4.15, -1.62),
+                    vec2(-4.15, -2.00),
+                    vec2( 4.15, -2.00),
                     vec2( 4.15,  1.38),
-                    vec2(-4.15, -1.62),
+                    vec2(-4.15, -2.00),
                     vec2( 4.15,  1.38),
                     vec2(-4.15,  1.38)
                 );
@@ -192,7 +200,7 @@ namespace GPR202_Assessment3
                 vPos = local;
 
                 // Anchor bottom of panel slightly above the bottom edge of the viewport.
-                vec2 centerPx = vec2(uViewport.x * 0.5, uScale * 1.62 + 8.0);
+                vec2 centerPx = vec2(uViewport.x * 0.5, uScale * 2.00 + 8.0);
                 vec2 pixelPos = centerPx + local * uScale;
                 vec2 ndc = (pixelPos / uViewport) * 2.0 - 1.0;
                 gl_Position = vec4(ndc, 0.0, 1.0);
@@ -216,6 +224,8 @@ namespace GPR202_Assessment3
             uniform int uGunAmmo;
             uniform int uMissiles;
             uniform int uBombs;
+            uniform int uPlayerHealth;
+            uniform float uPlayerHealthFrac;
 
             const float PI = 3.14159265359;
             const float TWO_PI = 6.28318530718;
@@ -300,6 +310,16 @@ namespace GPR202_Assessment3
                 return mask;
             }
 
+            float DrawLabel2(vec2 p, vec2 center, float charH, int g0, int g1)
+            {
+                float stepX = charH * 0.8;
+                float totalW = stepX + charH * 0.6;
+                vec2 start = vec2(center.x - totalW * 0.5, center.y - charH * 0.5);
+                float m = SampleGlyph(p, start, charH, g0);
+                m = max(m, SampleGlyph(p, start + vec2(stepX, 0.0), charH, g1));
+                return m;
+            }
+
             float DrawLabel3(vec2 p, vec2 center, float charH, int g0, int g1, int g2)
             {
                 float stepX = charH * 0.8;
@@ -334,6 +354,7 @@ namespace GPR202_Assessment3
             const int G_M = 24429;
             const int G_N = 31597;
             const int G_O = 31599;
+            const int G_P = 27556;
             const int G_R = 27565;
             const int G_S = 31183;
             const int G_T = 29842;
@@ -753,12 +774,58 @@ namespace GPR202_Assessment3
                 return vec4(col, stripMask * 0.92);
             }
 
+            // --- Player Health Bar Strip (Bottom of Dash Cowl) ---
+            vec4 RenderHealthStrip(vec2 p, float aa)
+            {
+                vec2 center = vec2(0.0, -1.74);
+                vec2 lp = p - center;
+                float dStrip = sdRoundedBox(lp, vec2(3.65, 0.16), 0.07);
+                float stripMask = 1.0 - smoothstep(-aa, aa, dStrip);
+                if (stripMask <= 0.0) return vec4(0.0);
+
+                float dBorder = abs(dStrip) - 0.015;
+                vec3 col = mix(vec3(0.04, 0.05, 0.065), vec3(0.25, 0.29, 0.35), 1.0 - smoothstep(-aa, aa, dBorder));
+
+                // Left label: HP
+                float hpLbl = DrawLabel2(lp, vec2(-3.26, 0.0), 0.15, G_H, G_P);
+                col = mix(col, vec3(0.76, 0.82, 0.88), hpLbl);
+
+                // Inner health bar track: x in [-2.85, +2.65]
+                vec2 barCenter = vec2(-0.10, 0.0);
+                vec2 barHalf = vec2(2.75, 0.085);
+                float dTrack = sdRoundedBox(lp - barCenter, barHalf, 0.035);
+                float trackMask = 1.0 - smoothstep(-aa, aa, dTrack);
+                col = mix(col, vec3(0.09, 0.07, 0.08), trackMask);
+
+                float frac = clamp(uPlayerHealthFrac, 0.0, 1.0);
+                float barX = clamp((lp.x - (barCenter.x - barHalf.x)) / (2.0 * barHalf.x), 0.0, 1.0);
+                float inFill = 1.0 - smoothstep(frac - aa / (2.0 * barHalf.x), frac + aa / (2.0 * barHalf.x), barX);
+
+                vec3 fillCol = frac > 0.55
+                    ? mix(vec3(0.95, 0.74, 0.14), vec3(0.18, 0.84, 0.38), (frac - 0.55) / 0.45)
+                    : mix(vec3(0.96, 0.18, 0.14), vec3(0.95, 0.74, 0.14), frac / 0.55);
+                if (frac < 0.30 && frac > 0.0)
+                {
+                    fillCol *= 0.72 + 0.28 * sin(uTime * 14.0);
+                }
+                float yHighlight = clamp((lp.y + barHalf.y) / (2.0 * barHalf.y), 0.0, 1.0);
+                fillCol *= mix(0.84, 1.14, yHighlight);
+                col = mix(col, fillCol, trackMask * inFill);
+
+                // Right numeric health readout
+                float hpNum = DrawNumber(lp, vec2(3.16, 0.0), 0.16, uPlayerHealth, 3);
+                vec3 numCol = frac <= 0.30 ? vec3(1.0, 0.36, 0.28) : vec3(0.95, 0.97, 0.99);
+                col = mix(col, numCol, hpNum);
+
+                return vec4(col, stripMask * 0.94);
+            }
+
             void main()
             {
                 float aa = 1.15 / max(uScale, 1.0);
 
                 // Translucent dark cockpit dash cowl backing
-                float dPanel = sdRoundedBox(vPos - vec2(0.0, -0.22), vec2(3.98, 1.38), 0.34);
+                float dPanel = sdRoundedBox(vPos - vec2(0.0, -0.39), vec2(3.98, 1.56), 0.34);
                 float panelMask = 1.0 - smoothstep(-aa, aa, dPanel);
                 float panelBorder = 1.0 - smoothstep(-aa, aa, abs(dPanel) - 0.018);
 
@@ -779,12 +846,13 @@ namespace GPR202_Assessment3
                 vec3 vsiCol = uVerticalSpeed >= 0.0 ? vec3(0.22, 0.80, 0.46) : vec3(0.95, 0.42, 0.22);
                 vec4 vsi = RenderSideBar(vPos, vec2( 3.55, 0.05), 0.125, 0.74, 0.5, vsiNorm, vsiNorm, vsiCol, G_V, G_S, G_I, true, aa);
 
-                // Bottom weapon & ammo readout strip
+                // Bottom weapon & health strips
                 vec4 weapons = RenderWeaponStrip(vPos, aa);
+                vec4 health = RenderHealthStrip(vPos, aa);
 
                 // Composite layers cleanly (standard source-over)
-                vec4 layers[6] = vec4[6](weapons, thr, vsi, asi, alt, att);
-                for (int i = 0; i < 6; i++)
+                vec4 layers[7] = vec4[7](health, weapons, thr, vsi, asi, alt, att);
+                for (int i = 0; i < 7; i++)
                 {
                     float a = layers[i].a;
                     color = mix(color, layers[i].rgb, a);
@@ -825,6 +893,8 @@ namespace GPR202_Assessment3
                 gunAmmoLoc = GL.GetUniformLocation(program, "uGunAmmo");
                 missilesLoc = GL.GetUniformLocation(program, "uMissiles");
                 bombsLoc = GL.GetUniformLocation(program, "uBombs");
+                playerHealthLoc = GL.GetUniformLocation(program, "uPlayerHealth");
+                playerHealthFracLoc = GL.GetUniformLocation(program, "uPlayerHealthFrac");
 
                 crossViewportLoc = GL.GetUniformLocation(crosshairProgram, "uViewport");
                 crossSizeLoc = GL.GetUniformLocation(crosshairProgram, "uSize");
@@ -881,7 +951,7 @@ namespace GPR202_Assessment3
             if (!showInstruments && !showCrosshair) return;
 
             // Keep instrument cluster compact and proportional across all aspect ratios.
-            float scale = Math.Clamp(MathF.Min(framebufferHeight * 0.084f, framebufferWidth * 0.053f), 46f, 102f);
+            float scale = Math.Clamp(MathF.Min(framebufferHeight * 0.076f, framebufferWidth * 0.052f), 44f, 94f);
 
             bool depthTest = GL.IsEnabled(EnableCap.DepthTest);
             bool blend = GL.IsEnabled(EnableCap.Blend);
@@ -915,6 +985,8 @@ namespace GPR202_Assessment3
                     GL.Uniform1(gunAmmoLoc, Math.Max(0, telemetry.GunAmmo));
                     GL.Uniform1(missilesLoc, Math.Max(0, telemetry.MissilesRemaining));
                     GL.Uniform1(bombsLoc, Math.Max(0, telemetry.BombsRemaining));
+                    GL.Uniform1(playerHealthLoc, (int)MathF.Ceiling(Math.Max(0f, telemetry.PlayerHealth)));
+                    GL.Uniform1(playerHealthFracLoc, Math.Clamp(telemetry.PlayerHealth / Math.Max(1f, telemetry.PlayerMaxHealth), 0f, 1f));
                     GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
                 }
 

@@ -76,7 +76,7 @@ namespace GPR202_Assessment3
     // Coordinates enemy squadrons, AI updates, combat damage exchange, and player health.
     public sealed class GameManager
     {
-        public const float MaxPlayerHealth = 100f;
+        public const float MaxPlayerHealth = Plane.DefaultMaxHealth;
 
         public EnemySpawner EnemySpawner { get; } = new();
         public EnemyFlightSettings EnemyFlightSettings { get; }
@@ -93,10 +93,10 @@ namespace GPR202_Assessment3
         {
             EnemySpawner.Clear();
 
-            var enemy1 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns, 500, 0, 0, EnemyFlightSettings);
-            var enemy2 = new EnemyAI(EnemyPersonality.Wanderer, EnemyWeapon.Missiles, 0, 15, 0, EnemyFlightSettings);
-            var enemy3 = new EnemyAI(EnemyPersonality.Bomber, EnemyWeapon.Bombs, 0, 0, 14, EnemyFlightSettings);
-            var enemy4 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns | EnemyWeapon.Missiles, 550, 2, 0, EnemyFlightSettings);
+            var enemy1 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns, 500, 0, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
+            var enemy2 = new EnemyAI(EnemyPersonality.Wanderer, EnemyWeapon.Missiles, 0, 15, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
+            var enemy3 = new EnemyAI(EnemyPersonality.Bomber, EnemyWeapon.Bombs, 0, 0, 14, Plane.DefaultMaxHealth, EnemyFlightSettings);
+            var enemy4 = new EnemyAI(EnemyPersonality.Aggressor, EnemyWeapon.MachineGuns | EnemyWeapon.Missiles, 550, 2, 0, Plane.DefaultMaxHealth, EnemyFlightSettings);
 
             EnemySpawner.Add(enemy1);
             EnemySpawner.Add(enemy2);
@@ -106,9 +106,10 @@ namespace GPR202_Assessment3
             EnemySpawner.SpawnAll();
         }
 
-        public void ResetForNewGame(Vector3 playerSpawnPos, Func<float, float, float> getTerrainHeight)
+        public void ResetForNewGame(Vector3 playerSpawnPos, Func<float, float, float> getTerrainHeight, Plane? playerPlane = null)
         {
-            PlayerHealth = MaxPlayerHealth;
+            playerPlane?.ResetHealth();
+            PlayerHealth = playerPlane?.Health ?? MaxPlayerHealth;
             EnemiesDestroyed = 0;
             EnemySpawner.ConfigureSpawnContext(playerSpawnPos, getTerrainHeight);
             SetupEnemies();
@@ -187,10 +188,11 @@ namespace GPR202_Assessment3
             }
         }
 
-        // Applies combat damage events; returns true if the player was destroyed this step.
+        // Applies combat damage events; returns true if the player plane was destroyed this step.
         public bool ApplyDamageEvents(
             IReadOnlyList<CombatDamageEvent> damageEvents,
             CombatSimulation combat,
+            Plane? playerPlane = null,
             Action<Vector3>? onEnemyDestroyed = null)
         {
             bool playerKilled = false;
@@ -201,7 +203,12 @@ namespace GPR202_Assessment3
                 var ev = damageEvents[i];
                 if (ev.TargetId == -1)
                 {
-                    if (PlayerHealth > 0f)
+                    if (playerPlane != null)
+                    {
+                        if (playerPlane.TakeDamage(ev.Damage)) playerKilled = true;
+                        PlayerHealth = playerPlane.Health;
+                    }
+                    else if (PlayerHealth > 0f)
                     {
                         PlayerHealth = Math.Max(0f, PlayerHealth - ev.Damage);
                         if (PlayerHealth <= 0f) playerKilled = true;

@@ -107,19 +107,28 @@ for (int step = 0; step < 480; step++)
 Assert(missileFired, "Wanderer equipped with Missiles must launch a missile after detecting player");
 Assert(missileWanderer.MissileAmmo == 4, "Wanderer missile ammo must decrement from 5 to 4");
 
-// 6. Verify GameManager damage application destroys enemy and damages player.
+// 6. Verify EnemyAI constructor sets plane health and GameManager damage destroys planes when health reaches 0.
+var customHpEnemy = new EnemyAI(EnemyPersonality.Bomber, EnemyWeapon.Bombs, 0, 0, 2, health: 150f);
+Assert(customHpEnemy.Plane.Health == 150f && customHpEnemy.Plane.MaxHealth == 150f, "EnemyAI constructor must set its Plane health");
+
 var combat = new CombatSimulation();
+var playerPlane = Plane.CreateEntity();
 var gm2 = new GameManager();
-gm2.ResetForNewGame(new Vector3(0f, 200f, 0f), FlatGround);
+gm2.ResetForNewGame(new Vector3(0f, 200f, 0f), FlatGround, playerPlane);
 Assert(gm2.EnemySpawner.AliveCount == 4, "Default GameManager.SetupEnemies() must spawn 4 enemies");
+Assert(gm2.EnemySpawner.Enemies[0].Health == 100f && playerPlane.Health == 100f, "Default planes must start at 100 health");
+
 var dmgEvents = new List<CombatDamageEvent>
 {
-    new() { TargetId = 0, OwnerId = -1, Damage = 120f },
-    new() { TargetId = -1, OwnerId = 1, Damage = 30f }
+    new() { TargetId = 0, OwnerId = -1, Damage = 100f },
+    new() { TargetId = -1, OwnerId = 1, Damage = CombatSimulation.BulletDamage }
 };
-bool playerDead = gm2.ApplyDamageEvents(dmgEvents, combat);
-Assert(!playerDead && gm2.PlayerHealth == 70f, "Player health must drop from 100 to 70");
-Assert(gm2.EnemiesDestroyed == 1 && gm2.EnemySpawner.AliveCount == 3, "Enemy 0 must be destroyed by 120 damage");
+bool playerDead = gm2.ApplyDamageEvents(dmgEvents, combat, playerPlane);
+Assert(!playerDead && playerPlane.Health == 98f && gm2.PlayerHealth == 98f, "One enemy bullet must reduce player plane health from 100 to 98");
+Assert(gm2.EnemiesDestroyed == 1 && gm2.EnemySpawner.AliveCount == 3 && gm2.EnemySpawner.Enemies[0].Plane.IsDestroyed, "Enemy 0 plane must be destroyed when health is depleted");
+
+bool playerKilledNow = gm2.ApplyDamageEvents(new List<CombatDamageEvent> { new() { TargetId = -1, OwnerId = 1, Damage = 98f } }, combat, playerPlane);
+Assert(playerKilledNow && playerPlane.IsDestroyed && playerPlane.Health == 0f, "Player plane must be destroyed when health is depleted");
 
 Console.WriteLine("PASS EnemyAI personalities (Wanderer/Aggressor/Bomber), weapons (MachineGuns/Missiles/Bombs), FlightPhysics guidance, EnemySpawner, and GameManager checks.");
 

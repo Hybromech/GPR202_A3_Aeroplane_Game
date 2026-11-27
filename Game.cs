@@ -26,6 +26,7 @@ namespace GPR202_Assessment3
         private readonly List<CombatExplosionEvent> combatExplosions = new(8);
         private GameManager gameManager = null!;
         private CombatRenderer? combatRenderer;
+        private HealthBarRenderer? healthBarRenderer;
         private ParticleRenderer? particleRenderer;
         private bool triggerGuns, requestMissile, requestBomb;
         private bool crashed;
@@ -160,6 +161,7 @@ namespace GPR202_Assessment3
             audio = new GameAudio(audioSettings);
             particleRenderer = new ParticleRenderer();
             combatRenderer = new CombatRenderer();
+            healthBarRenderer = new HealthBarRenderer();
             cockpitHud = new CockpitHud();
 
             base.OnLoad();
@@ -170,7 +172,8 @@ namespace GPR202_Assessment3
             fireworks.Clear();
             combat.Reset();
             plane?.ResetOrdnance();
-            gameManager?.ResetForNewGame(initialSpawn, Terrain.GetInterpolatedHeightAtWorld);
+            plane?.ResetHealth();
+            gameManager?.ResetForNewGame(initialSpawn, Terrain.GetInterpolatedHeightAtWorld, plane);
             triggerGuns = requestMissile = requestBomb = false;
             balloons_left = balloons_total;
             planeMaterial.VictoryGold = false;
@@ -187,6 +190,7 @@ namespace GPR202_Assessment3
         protected override void OnUnload()
         {
             cockpitHud?.Dispose();
+            healthBarRenderer?.Dispose();
             combatRenderer?.Dispose();
             particleRenderer?.Dispose();
             audio?.Dispose();
@@ -293,6 +297,7 @@ namespace GPR202_Assessment3
             fireworks.Clear();
             crashed = true;
             crashTime = 0f;
+            plane.Destroy();
             plane.position = flight.Position;
             if (hitTerrain) terrain.AddScorchMark(plane.position);
             explosion.Explode(plane.position + Vector3.UnitY * 2f);
@@ -458,7 +463,7 @@ namespace GPR202_Assessment3
                 }
             }
 
-            if (gameManager != null && gameManager.ApplyDamageEvents(combatDamage, combat, onEnemyDestroyed: pos =>
+            if (gameManager != null && gameManager.ApplyDamageEvents(combatDamage, combat, plane, onEnemyDestroyed: pos =>
             {
                 audio?.PlayExplosion();
                 Console.WriteLine($"Enemy aircraft shot down! Remaining: {gameManager.EnemySpawner.AliveCount}");
@@ -661,6 +666,7 @@ namespace GPR202_Assessment3
             mountainBillboard.Draw(view, proj, camWorldPos);
             gpuTimings.End();
 
+            healthBarRenderer?.DrawEnemyHealthBars(gameManager, view, proj, camWorldPos);
             combatRenderer?.Draw(combat, view, proj, camWorldPos);
             particleRenderer?.Draw(combat.ExhaustTrail, view, proj, FramebufferSize.Y, new Vector3(1.1f, 0.95f, 0.75f));
             for (int i = 0; i < combat.ExplosionBursts.Count; i++)
@@ -676,7 +682,7 @@ namespace GPR202_Assessment3
             if (cockpitHud != null)
             {
                 float groundHeight = Terrain.GetInterpolatedHeightAtWorld(flight.Position.X, flight.Position.Z);
-                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime, combat, virtualStick);
+                var telemetry = CockpitTelemetry.FromFlight(flight, groundHeight, Terrain.OffsetY, crashed, (float)cameraTime, combat, virtualStick, plane.Health, plane.MaxHealth);
                 cockpitHud.Draw(telemetry, FramebufferSize.X, FramebufferSize.Y, showInstruments: shadowSettings.CockpitHudEnabled, showCrosshair: !crashed);
             }
 

@@ -28,6 +28,31 @@ namespace GPR202_Assessment3
 
         public const int MissileCount = 6;
         public const int BombCount = 2;
+        public const float DefaultMaxHealth = 100f;
+
+        public float MaxHealth { get; private set; } = 300;
+        public float Health { get; private set; } = 300;
+        public bool IsDestroyed => Health <= 0f;
+        public float HealthFraction => MaxHealth > 0f ? Math.Clamp(Health / MaxHealth, 0f, 1f) : 0f;
+
+        public void SetHealth(float health, float? maxHealth = null)
+        {
+            float max = Math.Max(1f, maxHealth ?? health);
+            MaxHealth = max;
+            Health = Math.Clamp(health, 0f, max);
+        }
+
+        public void ResetHealth() => Health = MaxHealth;
+
+        // Returns true on the hit that depletes health to 0 (destroying the plane).
+        public bool TakeDamage(float damage)
+        {
+            if (IsDestroyed || damage <= 0f) return false;
+            Health = Math.Max(0f, Health - damage);
+            return IsDestroyed;
+        }
+
+        public void Destroy() => Health = 0f;
 
         // Two machine gun barrels per wing (4 total), matching plane.obj leading-edge guns.
         public static readonly Vector3[] WingGunMuzzles =
@@ -299,11 +324,29 @@ namespace GPR202_Assessment3
                 }
             ";
 
-        public Plane()
+        public Plane() : this(DefaultMaxHealth)
         {
+        }
+
+        public Plane(float maxHealth)
+        {
+            SetHealth(maxHealth, maxHealth);
             ImportModelFile();
             Setup();
         }
+
+        private Plane(bool loadGraphics, float maxHealth)
+        {
+            SetHealth(maxHealth, maxHealth);
+            if (loadGraphics)
+            {
+                ImportModelFile();
+                Setup();
+            }
+        }
+
+        // Creates a lightweight Plane instance (health/state only) for AI aircraft sharing the main GPU mesh.
+        public static Plane CreateEntity(float maxHealth = DefaultMaxHealth) => new Plane(loadGraphics: false, maxHealth);
 
         private bool firstMove = true;
         private Vector2 lastPos;

@@ -84,7 +84,7 @@ namespace GPR202_Assessment3
         public const int MaxBombs = 2;
 
         public const float BulletSpeed = 390f;
-        public const float BulletDamage = 25f;
+        public const float BulletDamage = 2f;
         public const float BulletLifetime = 3.0f;
         public const float GunFireInterval = 0.075f; // Fires a symmetric pair (1 left + 1 right) each cycle
 
