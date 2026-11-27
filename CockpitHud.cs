@@ -21,7 +21,7 @@ namespace GPR202_Assessment3
         public int MissilesRemaining { get; init; }
         public int BombsRemaining { get; init; }
         public float HitMarker { get; init; }         // 0..1 flash intensity
-        public Vector2 VirtualStick { get; init; }    // -1..1 virtual stick deflection
+        public Vector2 AimCursorOffsetPx { get; init; } // Pixel offset of the unrestricted aim circle from screen center
         public float PlayerHealth { get; init; }
         public float PlayerMaxHealth { get; init; }
 
@@ -32,7 +32,7 @@ namespace GPR202_Assessment3
             bool crashed,
             float time,
             CombatSimulation? combat = null,
-            Vector2 virtualStick = default,
+            Vector2 aimCursorOffsetPx = default,
             float playerHealth = Plane.DefaultMaxHealth,
             float playerMaxHealth = Plane.DefaultMaxHealth)
         {
@@ -57,7 +57,7 @@ namespace GPR202_Assessment3
                 MissilesRemaining = combat?.MissilesRemaining ?? 0,
                 BombsRemaining = combat?.BombsRemaining ?? 0,
                 HitMarker = combat != null ? Math.Clamp(combat.HitMarkerTimer / 0.22f, 0f, 1f) : 0f,
-                VirtualStick = virtualStick,
+                AimCursorOffsetPx = aimCursorOffsetPx,
                 PlayerHealth = crashed ? 0f : Math.Max(0f, playerHealth),
                 PlayerMaxHealth = Math.Max(1f, playerMaxHealth)
             };
@@ -93,31 +93,29 @@ namespace GPR202_Assessment3
         private readonly int playerHealthFracLoc;
 
         private readonly int crossViewportLoc;
-        private readonly int crossSizeLoc;
         private readonly int crossHitLoc;
-        private readonly int crossStickLoc;
+        private readonly int crossCursorLoc;
 
         private const string CrosshairVertexShader = @"#version 330 core
             uniform vec2 uViewport;
-            uniform float uSize;
             out vec2 vPx;
             void main()
             {
+                // Fullscreen quad so the mouse-aim cursor circle and tether line can move anywhere on screen.
                 const vec2 corners[6] = vec2[6](
                     vec2(-1.0, -1.0), vec2( 1.0, -1.0), vec2( 1.0,  1.0),
                     vec2(-1.0, -1.0), vec2( 1.0,  1.0), vec2(-1.0,  1.0)
                 );
                 vec2 c = corners[gl_VertexID];
-                vPx = c * uSize;
-                vec2 px = uViewport * 0.5 + vPx;
-                gl_Position = vec4((px / uViewport) * 2.0 - 1.0, 0.0, 1.0);
+                vPx = c * (uViewport * 0.5);
+                gl_Position = vec4(c, 0.0, 1.0);
             }";
 
         private const string CrosshairFragmentShader = @"#version 330 core
             in vec2 vPx;
             out vec4 fragColor;
             uniform float uHitMarker;
-            uniform vec2 uStick;
+            uniform vec2 uCursorPx;
 
             float sdSegment(vec2 p, vec2 a, vec2 b)
             {
@@ -130,48 +128,70 @@ namespace GPR202_Assessment3
             {
                 vec2 p = vPx;
                 float r = length(p);
+                float distToCursor = length(p - uCursorPx);
+                float cursorLen = length(uCursorPx);
 
-                // Subtle outer aiming ring (r = 22 px)
-                float dRing = abs(r - 22.0) - 0.85;
-                // Four crisp cardinal reticle ticks with center gap
-                float dH = sdSegment(vec2(abs(p.x), p.y), vec2(7.0, 0.0), vec2(17.5, 0.0)) - 1.0;
-                float dV = sdSegment(vec2(p.x, abs(p.y)), vec2(0.0, 7.0), vec2(0.0, 17.5)) - 1.0;
-                // Center aim pip
-                float dDot = r - 1.8;
+                // Quick early-out for pixels far from center crosshair, cursor circle, and tether line.
+                if (r > 32.0 && distToCursor > 22.0 && cursorLen <= 14.0) discard;
 
-                float dMain = min(min(dH, dV), dDot);
-                float outline = (1.0 - smoothstep(0.4, 2.0, min(dMain, dRing))) * 0.55;
-                float core = 1.0 - smoothstep(-0.6, 0.8, dMain);
-                float ring = (1.0 - smoothstep(-0.6, 0.8, dRing)) * 0.55;
-
-                vec3 reticleCol = vec3(0.42, 1.0, 0.55);
                 vec3 col = vec3(0.02, 0.04, 0.03);
-                float alpha = outline;
+                float alpha = 0.0;
 
-                float bright = max(core, ring);
-                col = mix(col, reticleCol, bright);
-                alpha = max(alpha, bright * 0.9);
-
-                // Subtle virtual-stick deflection indicator (shows stick offset while cursor is grabbed)
-                vec2 stickPx = clamp(uStick, vec2(-1.0), vec2(1.0)) * 52.0;
-                if (length(stickPx) > 3.0)
+                // 1. Center aircraft crosshair reticle
+                if (r <= 32.0)
                 {
-                    float dLine = sdSegment(p, vec2(0.0), stickPx) - 0.7;
-                    float lineMask = (1.0 - smoothstep(-0.5, 0.9, dLine)) * 0.25;
-                    float dStickRing = abs(length(p - stickPx) - 4.5) - 0.95;
-                    float stickMask = (1.0 - smoothstep(-0.5, 0.9, dStickRing)) * 0.75;
-                    col = mix(col, vec3(0.85, 0.96, 1.0), max(lineMask, stickMask));
-                    alpha = max(alpha, max(lineMask, stickMask));
+                    float dRing = abs(r - 22.0) - 0.85;
+                    float dH = sdSegment(vec2(abs(p.x), p.y), vec2(7.0, 0.0), vec2(17.5, 0.0)) - 1.0;
+                    float dV = sdSegment(vec2(p.x, abs(p.y)), vec2(0.0, 7.0), vec2(0.0, 17.5)) - 1.0;
+                    float dDot = r - 1.8;
+
+                    float dMain = min(min(dH, dV), dDot);
+                    float outline = (1.0 - smoothstep(0.4, 2.0, min(dMain, dRing))) * 0.55;
+                    float core = 1.0 - smoothstep(-0.6, 0.8, dMain);
+                    float ring = (1.0 - smoothstep(-0.6, 0.8, dRing)) * 0.55;
+
+                    vec3 reticleCol = vec3(0.42, 1.0, 0.55);
+                    alpha = outline;
+                    float bright = max(core, ring);
+                    col = mix(col, reticleCol, bright);
+                    alpha = max(alpha, bright * 0.9);
+
+                    if (uHitMarker > 0.01)
+                    {
+                        vec2 ap = abs(p);
+                        float dHit = sdSegment(ap, vec2(6.5, 6.5), vec2(15.0, 15.0)) - 1.35;
+                        float hitMask = (1.0 - smoothstep(-0.6, 0.9, dHit)) * uHitMarker;
+                        col = mix(col, vec3(1.0, 0.36, 0.16), hitMask);
+                        alpha = max(alpha, hitMask);
+                    }
                 }
 
-                // Diagonal hit-confirmation X flash
-                if (uHitMarker > 0.01)
+                // 2. Unrestricted mouse-aim grey circle + tether line from center crosshair
+                if (cursorLen > 12.0)
                 {
-                    vec2 ap = abs(p);
-                    float dHit = sdSegment(ap, vec2(6.5, 6.5), vec2(15.0, 15.0)) - 1.35;
-                    float hitMask = (1.0 - smoothstep(-0.6, 0.9, dHit)) * uHitMarker;
-                    col = mix(col, vec3(1.0, 0.36, 0.16), hitMask);
-                    alpha = max(alpha, hitMask);
+                    vec2 dir = uCursorPx / cursorLen;
+                    vec2 lineStart = dir * min(22.0, cursorLen);
+                    vec2 lineEnd = uCursorPx - dir * min(10.0, cursorLen);
+                    if (cursorLen > 32.0)
+                    {
+                        float dLine = sdSegment(p, lineStart, lineEnd) - 0.8;
+                        float lineMask = (1.0 - smoothstep(-0.5, 1.0, dLine)) * 0.38;
+                        col = mix(col, vec3(0.84, 0.89, 0.94), lineMask);
+                        alpha = max(alpha, lineMask);
+                    }
+                }
+
+                if (distToCursor <= 18.0)
+                {
+                    float dCircle = abs(distToCursor - 9.5) - 1.25;
+                    float dCenterPip = distToCursor - 1.8;
+                    float dCursor = min(dCircle, dCenterPip);
+                    float cOutline = (1.0 - smoothstep(0.4, 2.2, dCursor)) * 0.55;
+                    float cCore = (1.0 - smoothstep(-0.6, 0.8, dCursor)) * 0.88;
+                    col = mix(col, vec3(0.03, 0.04, 0.05), cOutline);
+                    alpha = max(alpha, cOutline);
+                    col = mix(col, vec3(0.82, 0.86, 0.90), cCore);
+                    alpha = max(alpha, cCore);
                 }
 
                 if (alpha <= 0.001) discard;
@@ -897,9 +917,8 @@ namespace GPR202_Assessment3
                 playerHealthFracLoc = GL.GetUniformLocation(program, "uPlayerHealthFrac");
 
                 crossViewportLoc = GL.GetUniformLocation(crosshairProgram, "uViewport");
-                crossSizeLoc = GL.GetUniformLocation(crosshairProgram, "uSize");
                 crossHitLoc = GL.GetUniformLocation(crosshairProgram, "uHitMarker");
-                crossStickLoc = GL.GetUniformLocation(crosshairProgram, "uStick");
+                crossCursorLoc = GL.GetUniformLocation(crosshairProgram, "uCursorPx");
             }
             catch
             {
@@ -994,9 +1013,8 @@ namespace GPR202_Assessment3
                 {
                     GL.UseProgram(crosshairProgram);
                     GL.Uniform2(crossViewportLoc, (float)framebufferWidth, (float)framebufferHeight);
-                    GL.Uniform1(crossSizeLoc, 66f);
                     GL.Uniform1(crossHitLoc, Math.Clamp(telemetry.HitMarker, 0f, 1f));
-                    GL.Uniform2(crossStickLoc, telemetry.VirtualStick.X, telemetry.VirtualStick.Y);
+                    GL.Uniform2(crossCursorLoc, telemetry.AimCursorOffsetPx.X, telemetry.AimCursorOffsetPx.Y);
                     GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
                 }
             }

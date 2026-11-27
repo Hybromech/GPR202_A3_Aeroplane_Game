@@ -119,9 +119,11 @@ namespace GPR202_Assessment3
                 float desiredRightTurnRate = roll * turnScale * settings.CoordinatedTurnAssistance
                     - yaw * settings.YawAuthority * 0.65f;
 
-                // World-vertical climb/dive rate: mouse up (+pitch) climbs relative to ground,
-                // mouse down (-pitch) dives; centered pitch holds level altitude during turns.
-                float levelHold = Math.Clamp(-Velocity.Y * 0.012f - forward.Y * 0.65f, -0.35f, 0.35f)
+                // World-vertical climb/dive rate: positive pitch climbs relative to ground,
+                // negative pitch dives; centered pitch compensates banked turn gravity droop
+                // without fighting an intentional climb/dive angle.
+                float turnLoad = 1f / Math.Max(0.45f, MathF.Cos(bank)) - 1f;
+                float levelHold = Math.Clamp(turnLoad * 0.18f, 0f, 0.30f)
                     * settings.TurnLiftAssistance * safety * (1f - MathF.Abs(pitch));
                 float desiredClimbRate = pitch * settings.AssistedPitchRate + levelHold;
 
