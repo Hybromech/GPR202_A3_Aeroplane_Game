@@ -192,7 +192,7 @@ namespace GPR202_Assessment3
                     return result / 9.0;
                 }
 
-                float ComputeShadow(vec4 lsPos, vec3 lightDir)
+                float ComputeShadow(vec4 lsPos, vec3 norm, vec3 lightDir)
                 {
                     if (uShadowStrength <= 0.0) return 0.0;
                     vec3 projCoords = lsPos.xyz / lsPos.w;
@@ -203,7 +203,10 @@ namespace GPR202_Assessment3
                         return 0.0;
                     }
 
-                    if (uPcfSpread == 1.0) return CompactShadow(projCoords.xy, projCoords.z - uBias);
+                    float ndotl = clamp(dot(norm, lightDir), 0.0, 1.0);
+                    float bias = max(uBias * 2.5 * (1.0 - ndotl), uBias);
+
+                    if (uPcfSpread == 1.0) return CompactShadow(projCoords.xy, projCoords.z - bias);
 
                     vec2 texelSize = (1.0 / textureSize(shadowMap, 0)) * uPcfSpread;
 
@@ -217,7 +220,7 @@ namespace GPR202_Assessment3
                     for (int i = 0; i < 9; i++)
                     {
                         shadow += FilteredShadow(projCoords.xy + offsets[i] * texelSize,
-                            projCoords.z - uBias);
+                            projCoords.z - bias);
                     }
 
                     return shadow / 9.0;
@@ -229,13 +232,13 @@ namespace GPR202_Assessment3
                     vec3 baseColor = uVictoryGold ? vec3(1.0, 0.766, 0.336) : texColor.rgb;
                     vec3 lightDir = normalize(-dirLight.direction);
 
-                    float shadow = ComputeShadow(lightSpacePos, lightDir);
-                    float strength = uShadowStrength;
-
                     // Cook-Torrance metallic BRDF: GGX distribution, Schlick Fresnel/geometry.
                     const float PI = 3.14159265359;
                     vec3 N = normalize(worldNormal);
                     if (!gl_FrontFacing) N = -N;
+                    float shadow = ComputeShadow(lightSpacePos, N, lightDir);
+                    float shadowFactor = shadow * uShadowStrength;
+
                     vec3 V = normalize(viewPos - fragPos);
                     vec3 H = lightDir + V;
                     H = dot(H, H) > 0.000001 ? normalize(H) : N;
@@ -252,11 +255,17 @@ namespace GPR202_Assessment3
                     float G = (NoV / (NoV * (1.0 - k) + k))
                         * (NoL / (NoL * (1.0 - k) + k));
                     vec3 specular = D * G * F / max(4.0 * NoV * NoL, 0.0001);
-                    vec3 diffuse = (1.0 - F) * (1.0 - uMetalness) * baseColor / PI;
-                    // Ambient fill is an approximation; no environment reflection map is sampled.
-                    vec3 ambient = ambientLight * mix(baseColor, F0, uMetalness);
-                    vec3 litColor = ambient + (diffuse + specular) * dirLight.diffuse
-                        * NoL * (1.0 - shadow * strength);
+                    // Scale PBR diffuse to match the scene's linear directional light scale,
+                    // and add a broad metallic sun sheen so high-metalness surfaces (including
+                    // VictoryGold) respond clearly to directional light without an IBL cubemap.
+                    vec3 diffuse = (1.0 - F) * (1.0 - uMetalness) * baseColor;
+                    vec3 metalSheen = F0 * uMetalness * (0.55 + 0.45 * pow(NoH, 4.0));
+                    vec3 ambientBase = ambientLight * mix(baseColor, F0, uMetalness);
+                    float ambientVisibility = 1.0 - shadowFactor * 0.45;
+                    vec3 ambient = ambientBase * ambientVisibility;
+                    vec3 direct = (diffuse + metalSheen + specular) * dirLight.diffuse
+                        * NoL * (1.0 - shadowFactor);
+                    vec3 litColor = ambient + direct;
 
                     // Raise only bright, already shaded regions into HDR for bloom.
                     float luminance = dot(litColor, vec3(0.2126, 0.7152, 0.0722));

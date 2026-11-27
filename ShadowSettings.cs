@@ -32,9 +32,9 @@ namespace GPR202_Assessment3
         public float BalloonBloomIntensity { get; set; } = 1.48f;
 
 
-        // Plane metallic material: high metalness and moderately polished finish.
-        public float PlaneMetalness { get; set; } = 0.9f;
-        public float PlaneRoughness { get; set; } = 0.25f;
+        // Plane painted-metal material: balanced diffuse response with metallic sheen.
+        public float PlaneMetalness { get; set; } = 0.35f;
+        public float PlaneRoughness { get; set; } = 0.32f;
 
         // Plane HDR highlights feeding the scene bloom pass.
         public bool PlaneBloomEnabled { get; set; } = true;
@@ -44,18 +44,19 @@ namespace GPR202_Assessment3
         // Scene ambient fill. Colour is linear RGB; intensity 0 disables the fill.
         public bool AmbientEnabled { get; set; } = true;
         public Vector3 AmbientColor { get; set; } = new Vector3(1.0f, 1.0f, 1.12f);
-        public float AmbientIntensity { get; set; } = 0.55f; //0.25f
+        public float AmbientIntensity { get; set; } = 0.25f; //0.25f
 
         // Directional light directions for different times of day
-        public Vector3 DawnDirection { get; set; } = new Vector3(-0.65f, -0.55f, 0.45f);
-        public Vector3 SunriseDirection { get; set; } = new Vector3(-0.85f, -0.40f, 0.25f);
-        public Vector3 MorningDirection { get; set; } = new Vector3(-0.95f, -0.30f, -0.10f);
-        public Vector3 MiddayDirection { get; set; } = new Vector3(-0.20f, -0.95f, -0.15f);
-        public Vector3 AfternoonDirection { get; set; } = new Vector3(0.55f, -0.65f, -0.35f);
-        public Vector3 SunsetDirection { get; set; } = new Vector3(0.85f, -0.40f, -0.25f);
-        public Vector3 DuskDirection { get; set; } = new Vector3(0.65f, -0.55f, 0.45f);
-        public Vector3 NightDirection { get; set; } = new Vector3(0.25f, -0.85f, 0.55f);
-        public Vector3 MidnightDirection { get; set; } = new Vector3(0.10f, -0.98f, 0.10f);
+        public static Vector3 DawnDirection { get; set; } = new Vector3(-0.65f, -0.55f, 0.45f);
+        public static Vector3 SunriseDirection { get; set; } = new Vector3(-0.85f, -0.40f, 0.25f);
+        public static Vector3 MorningDirection { get; set; } = new Vector3(-0.95f, -0.30f, -0.10f);
+        public static Vector3 MiddayDirection { get; set; } = new Vector3(-0.20f, -0.95f, -0.15f);
+        public static Vector3 MiddayDirection2 { get; set; } = new Vector3(-0.4f, -1.0f, -0.3f);                                                             
+        public static Vector3 AfternoonDirection { get; set; } = new Vector3(0.55f, -0.65f, -0.35f);
+        public static Vector3 SunsetDirection { get; set; } = new Vector3(0.85f, -0.40f, -0.25f);
+        public static Vector3 DuskDirection { get; set; } = new Vector3(0.65f, -0.55f, 0.45f);
+        public static Vector3 NightDirection { get; set; } = new Vector3(0.25f, -0.85f, 0.55f);
+        public static Vector3 MidnightDirection { get; set; } = new Vector3(0.10f, -0.98f, 0.10f);
 
         // Shadow map resolution and coverage
         public int Resolution { get; set; } = 4096;
@@ -75,9 +76,9 @@ namespace GPR202_Assessment3
         public float TerrainShadowStrength { get; set; } = 0.85f;
 
         // Shadows received by the plane
-        public float PlaneBias { get; set; } = 0.00025f;
+        public float PlaneBias { get; set; } = 0.00012f;
         public float PlanePcfSpread { get; set; } = 1.0f;
-        public float PlaneSoftEdgeRange { get; set; } = 0.00015f;
-        public float PlaneShadowStrength { get; set; } = 0.65f;
+        public float PlaneSoftEdgeRange { get; set; } = 0.0001f;
+        public float PlaneShadowStrength { get; set; } = 0.75f;
     }
 }

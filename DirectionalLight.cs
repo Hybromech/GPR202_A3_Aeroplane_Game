@@ -21,19 +21,19 @@ namespace GPR202_Assessment3
             public int Specular;
             public int ViewPos;
         }
-
+     
         public DirectionalLight(
             Vector3? direction = null,
             Vector3? ambient = null,
             Vector3? diffuse = null,
             Vector3? specular = null)
         {
-            Direction = Vector3.Normalize(direction ?? new Vector3(-0.4f, -1.0f, -0.3f));
+            Direction = Vector3.Normalize(direction ?? ShadowSettings.MiddayDirection);
             Ambient = ambient ?? new Vector3(0.25f, 0.25f, 0.28f);
             Diffuse = diffuse ?? new Vector3(0.95f, 0.92f, 0.85f);
             Specular = specular ?? new Vector3(0.25f, 0.25f, 0.25f);
         }
-
+      
         public void ApplyToShader(int shaderProgram, Vector3 viewPos, string uniformName = "dirLight")
         {
             GL.UseProgram(shaderProgram);
